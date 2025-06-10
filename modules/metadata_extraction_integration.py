@@ -267,14 +267,23 @@ def extract_document_text_from_box(client: Any, file_id: str) -> str:
         
         if response.status_code == 200:
             response_data = response.json()
-            if 'text' in response_data:
+            # The Pylint issue was: if 'text' in response_data and response_data['text'] is not None:
+            # Corrected to:
+            if response_data is not None and 'text' in response_data and response_data['text'] is not None:
                 return response_data['text']
-        
-        logger.warning(f"Failed to extract text from Box document: {response.status_code}")
-        return ""
-    except Exception as e:
-        logger.error(f"Error extracting text from Box document: {str(e)}")
-        return ""
+            else:
+                logger.warning(f"Text extraction for file {file_id} succeeded (200) but response_data was None, or 'text' key missing or None.")
+                return "" # Explicitly return empty string
+        else:
+            logger.warning(f"Failed to extract text from Box document {file_id}: Status code {response.status_code}. Response: {response.text[:200]}") # Log part of response
+            return "" # Explicitly return empty string on non-200
+
+    except requests.exceptions.RequestException as e: # Catch specific requests exceptions
+        logger.error(f"RequestException extracting text from Box document {file_id}: {str(e)}")
+        return "" # Explicitly return empty string
+    except Exception as e: # Catch any other exceptions
+        logger.error(f"Generic error extracting text from Box document {file_id}: {str(e)}")
+        return "" # Explicitly return empty string
 
 def define_field_relationships() -> List[Dict[str, Any]]:
     """

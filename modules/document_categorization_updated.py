@@ -328,7 +328,7 @@ def document_categorization():
                             valid_categories = [doc_type['name'] for doc_type in st.session_state.document_types]
 
                             enhanced_result = process_with_enhanced_confidence(
-                                original_result=result,
+                                categorization_result=result,
                                 document_features=document_features,
                                 valid_categories=valid_categories,
                                 document_text=document_text,
@@ -410,7 +410,7 @@ def document_categorization():
                                 valid_categories = [doc_type['name'] for doc_type in st.session_state.document_types]
 
                                 enhanced_result = process_with_enhanced_confidence(
-                                    original_result=combined_result,
+                                    categorization_result=combined_result,
                                     document_features=document_features,
                                     valid_categories=valid_categories,
                                     document_text=document_text,
@@ -474,7 +474,7 @@ def document_categorization():
                                     valid_categories = [doc_type['name'] for doc_type in st.session_state.document_types]
 
                                     enhanced_result = process_with_enhanced_confidence(
-                                        original_result=result,
+                                        categorization_result=result,
                                         document_features=document_features,
                                         valid_categories=valid_categories,
                                         document_text=document_text,

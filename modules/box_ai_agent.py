@@ -538,8 +538,14 @@ def create_box_ai_agent_ui():
         
         if selection_mode == "Selected Files":
             if "selected_files" in st.session_state and st.session_state.selected_files:
-                st.success(f"{len(st.session_state.selected_files)} files selected")
-                files_to_process = st.session_state.selected_files
+                # Ensure selected_files contains dictionaries with an 'id' key
+                valid_files = [f for f in st.session_state.selected_files if isinstance(f, dict) and 'id' in f]
+                if len(valid_files) != len(st.session_state.selected_files):
+                    logger.warning("Some items in st.session_state.selected_files were not in the expected format (dict with 'id').")
+                files_to_process = [f['id'] for f in valid_files] # Extract only string IDs
+                st.success(f"{len(files_to_process)} files selected for processing.")
+                if not files_to_process and st.session_state.selected_files: # If all were invalid
+                     st.error("Selected files are not in the correct format. Please re-select from File Browser.")
             else:
                 st.warning("No files selected. Please select files in the File Browser tab.")
         else:
