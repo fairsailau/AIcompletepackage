@@ -8,12 +8,12 @@ for document processing, categorization, and metadata extraction.
 import logging
 import json
 import time
-from typing import Dict, Any, List, Optional, Union, Callable
+from typing import Dict, Any, List, Optional, Union, Callable, Type
 
 # LangChain imports
 from langchain.tools import BaseTool, StructuredTool, Tool
 from langchain.callbacks.manager import CallbackManagerForToolRun
-from langchain.pydantic_v1 import BaseModel, Field
+from pydantic import BaseModel, Field
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -28,9 +28,9 @@ class BoxAIQueryInput(BaseModel):
 class BoxAITool(BaseTool):
     """Tool for querying Box AI API."""
     
-    name = "box_ai_query"
-    description = "Query Box AI to process documents, categorize them, or extract metadata"
-    args_schema = BoxAIQueryInput
+    name: str = "box_ai_query"
+    description: str = "Query Box AI to process documents, categorize them, or extract metadata"
+    args_schema: Type[BaseModel] = BoxAIQueryInput
     
     def __init__(self, box_client):
         """Initialize the Box AI Tool with a Box client."""
