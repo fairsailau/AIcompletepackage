@@ -41,21 +41,40 @@ def integrate_box_ai_agent_with_app():
         boundaries = ProcessingBoundaries()
 
         # Attempt to load OpenAI API key from Streamlit secrets
-        openai_api_key = None
+        openai_api_key_value = None # Initialize to ensure it's defined
         if hasattr(st, 'secrets'):
-            if "box_dev" in st.secrets and isinstance(st.secrets["box_dev"], dict) and "OPENAI_API_KEY" in st.secrets["box_dev"]:
-                openai_api_key = st.secrets["box_dev"]["OPENAI_API_KEY"]
-                if openai_api_key:
-                    logger.info("Loaded OPENAI_API_KEY from st.secrets['box_dev']")
-            elif "OPENAI_API_KEY" in st.secrets: # Fallback for top-level key
-                openai_api_key = st.secrets["OPENAI_API_KEY"]
-                if openai_api_key:
-                    logger.info("Loaded OPENAI_API_KEY directly from st.secrets")
+            logger.info(f"st.secrets type: {type(st.secrets)}") # Log type of st.secrets
 
-            if not openai_api_key:
-                logger.warning("OPENAI_API_KEY not found in st.secrets under 'box_dev' or at top level.")
+            box_dev_section = st.secrets.get("box_dev") # Use .get() for safety
+            if box_dev_section is not None:
+                logger.info(f"st.secrets['box_dev'] type: {type(box_dev_section)}")
+                if hasattr(box_dev_section, 'get'): # Check if it's dict-like (supports .get())
+                    openai_api_key_value = box_dev_section.get("OPENAI_API_KEY")
+                elif isinstance(box_dev_section, dict): # Fallback for plain dict
+                     openai_api_key_value = box_dev_section.get("OPENAI_API_KEY")
+
+                if openai_api_key_value:
+                    logger.info(f"Attempted to load OPENAI_API_KEY from st.secrets['box_dev']. Value type: {type(openai_api_key_value)}")
+
+            # Fallback to top-level key if not found or box_dev_section was None or key not in box_dev_section
+            if not openai_api_key_value:
+                if hasattr(st.secrets, 'get'):
+                    openai_api_key_value = st.secrets.get("OPENAI_API_KEY")
+                    if openai_api_key_value:
+                        logger.info(f"Attempted to load OPENAI_API_KEY directly from st.secrets. Value type: {type(openai_api_key_value)}")
+
+            if not openai_api_key_value:
+                logger.warning("OPENAI_API_KEY not found in st.secrets (neither under 'box_dev' nor at top level).")
+            elif not isinstance(openai_api_key_value, str):
+                # If what we got is not a string, log an error and force it to None.
+                # This is crucial to prevent passing a dict/AttrDict to ChatOpenAI.
+                logger.error(f"OPENAI_API_KEY found but is not a string. Type: {type(openai_api_key_value)}. Actual value: {str(openai_api_key_value)[:100]}...") # Log first 100 chars
+                openai_api_key_value = None
+
         else:
-            logger.warning("st.secrets not available. OPENAI_API_KEY must be set as an environment variable.")
+            logger.warning("st.secrets attribute not available. Cannot load OPENAI_API_KEY from secrets.")
+
+        openai_api_key = openai_api_key_value # This variable is then passed to BoxAIDocumentProcessingAgent
 
         # Create agent
         st.session_state.box_ai_processing_agent = BoxAIDocumentProcessingAgent(
