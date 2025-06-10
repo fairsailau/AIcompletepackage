@@ -1,0 +1,15 @@
+{
+  "document_types": [
+    {
+      "name": "Default",
+      "fields": [
+        {
+          "key": "any_field",
+          "rules": []
+        }
+      ],
+      "mandatory_fields": []
+    }
+  ],
+  "template_rules": []
+}
