@@ -373,9 +373,9 @@ else:
         st.title("Validation Rule Builder")
         show_rule_overview()
 
-        elif st.session_state.current_page == "Box AI Agent": # New page rendering
-            # The title will be set within create_box_ai_agent_ui() or box_ai_agent_workflow_tab()
-            box_ai_agent_workflow_tab()
+    elif st.session_state.current_page == "Box AI Agent": # New page rendering
+        # The title will be set within create_box_ai_agent_ui() or box_ai_agent_workflow_tab()
+        box_ai_agent_workflow_tab()
 
     else:
         # Fallback if page is unknown
