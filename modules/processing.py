@@ -10,6 +10,12 @@ from datetime import datetime
 from modules.metadata_extraction import get_extraction_functions
 from modules.validation_engine import ValidationRuleLoader, Validator
 from modules.validation_engine import ConfidenceAdjuster
+from modules.metadata_extraction_integration import (
+    process_metadata_with_enhanced_confidence,
+    extract_document_text_from_box,
+    define_field_relationships,
+    define_validation_rules,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -324,6 +330,25 @@ def process_files_with_progress(files_to_process: List[Dict[str, Any]], extracti
                     ai_model=ai_model
                 )
                 logger.info(f"File {file_name} ({file_id}): Raw extracted metadata with confidences: {json.dumps(extracted_metadata, indent=2)}")
+
+                # Enhanced Confidence Framework Integration (Structured Mode Only)
+                if processing_mode == 'structured':
+                    logger.info(f"File {file_name} ({file_id}): Applying Enhanced Confidence Framework.")
+                    document_text = extract_document_text_from_box(client, file_id)
+                    # Assuming general rules for now, specific rules might be loaded based on template/doc_type
+                    validation_rules = define_validation_rules()
+                    field_relationships = define_field_relationships()
+
+                    enhanced_extraction_result = process_metadata_with_enhanced_confidence(
+                        extraction_result=extracted_metadata,
+                        field_definitions=template_fields, # template_fields should be available here
+                        document_text=document_text,
+                        validation_rules=validation_rules,
+                        field_relationships=field_relationships,
+                        use_enhanced=True
+                    )
+                    extracted_metadata = enhanced_extraction_result # Replace original with enhanced
+                    logger.info(f"File {file_name} ({file_id}): Metadata after Enhanced Confidence: {json.dumps(extracted_metadata, indent=2)}")
                 
                 # Validate the extracted metadata
                 
@@ -419,13 +444,25 @@ def process_files_with_progress(files_to_process: List[Dict[str, Any]], extracti
                         adjusted_qualitative_str = primary_field_adj_details.get('confidence_qualitative', 'Low')
                         adjusted_numeric_score = primary_field_adj_details.get('confidence', 0.0)
                     
+                    # Enhanced confidence details for UI
+                    enhanced_confidence_details = None
+                    final_numeric_confidence = adjusted_numeric_score # Default to adjuster's output
+
+                    if processing_mode == 'structured': # Only try to get enhanced details if it was processed
+                        enhanced_confidence_details = extracted_metadata.get(f"{field_key}_enhanced_confidence")
+                        # Use numeric confidence from enhanced framework if available, otherwise fallback to adjuster's
+                        final_numeric_confidence = extracted_metadata.get(f"{field_key}_confidence_numeric", adjusted_numeric_score)
+
+                    # The qualitative confidence can also be refined based on final_numeric_confidence if needed
+
                     fields_for_ui[field_key] = {
                         'value': current_field_value_str,
-                        'ai_confidence': ai_confidence_str,
+                        'ai_confidence': ai_confidence_str, # Original AI confidence (categorical)
                         'validation_status': validation_status_str,
                         'validation_messages': validation_messages_list,
-                        'adjusted_confidence': adjusted_numeric_score, # Numeric score
-                        'adjusted_confidence_qualitative': adjusted_qualitative_str # Qualitative string
+                        'adjusted_confidence': final_numeric_confidence, # Numeric score (prioritizes enhanced if available)
+                        'adjusted_confidence_qualitative': adjusted_qualitative_str, # Qualitative string (can be refined)
+                        'enhanced_confidence_details': enhanced_confidence_details # New field for detailed view
                     }
                 
                 # The 'overall_status_info' dictionary is already calculated.
@@ -441,16 +478,18 @@ def process_files_with_progress(files_to_process: List[Dict[str, Any]], extracti
                             "ai_confidence": f_data.get('ai_confidence'), 
                             "adjusted_confidence": f_data.get('adjusted_confidence_qualitative'), # Display qualitative
                             "field_validation_status": f_data.get('validation_status', 'skip').lower(),
-                            "validations": [ 
+                            "validations": [
                                 {
-                                    "rule_type": "field_validation", 
+                                    "rule_type": "field_validation",
                                     "status": f_data.get('validation_status', 'skip'),
                                     "message": ". ".join(f_data.get('validation_messages', [])),
                                     "confidence_impact": f_data.get('adjusted_confidence') # Store numeric here
                                 }
-                            ]
+                            ],
+                            # Store enhanced confidence details directly in the field for easier access in results_viewer
+                            "enhanced_confidence_details": f_data.get('enhanced_confidence_details')
                         }
-                        for f_key, f_data in fields_for_ui.items() 
+                        for f_key, f_data in fields_for_ui.items()
                     },
                     "document_validation_summary": { 
                         "mandatory_fields_status": validation_output.get('mandatory_check', {}).get('status', 'fail').lower(),
@@ -458,9 +497,11 @@ def process_files_with_progress(files_to_process: List[Dict[str, Any]], extracti
                         "cross_field_status": overall_status_info.get('cross_field_status', "pass").lower(), 
                         "overall_document_confidence_suggestion": overall_status_info.get('status', 'Low')
                     },
-                    "raw_ai_response": extracted_metadata, 
-                    "data_sent_to_adjuster": data_for_adjuster, 
-                    "confidence_adjuster_output": confidence_output 
+                    "raw_ai_response": extracted_metadata, # This now contains enhanced confidence fields
+                    "data_sent_to_adjuster": data_for_adjuster,
+                    "confidence_adjuster_output": confidence_output,
+                    # Store the raw _confidence_framework output if available (only in structured mode)
+                    "_enhanced_confidence_framework_output": extracted_metadata.get("_confidence_framework") if processing_mode == 'structured' else None
                 }
                 
                 # Add to processing state results for progress tracking

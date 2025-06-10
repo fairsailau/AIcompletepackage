@@ -23,6 +23,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 # Import modules
 from modules.authentication import authenticate
 from modules.file_browser import file_browser
+from modules.box_ai_streamlit_integration import update_app_for_box_ai_agent, box_ai_agent_workflow_tab
 from modules.metadata_config import metadata_config
 from modules.processing import process_files
 from modules.results_viewer import view_results
@@ -175,6 +176,9 @@ def initialize_session_state():
 # Initialize session state
 initialize_session_state()
 
+if st.session_state.get("client"): # Ensure client is initialized
+    update_app_for_box_ai_agent()
+
 # Update last activity timestamp
 def update_activity():
     st.session_state.last_activity = datetime.now()
@@ -251,6 +255,10 @@ with st.sidebar:
             
         if st.button("Rule Builder", use_container_width=True, key="nav_rule_builder"):
             navigate_to("Rule Builder")
+            st.rerun()
+
+        if st.button("Box AI Agent", use_container_width=True, key="nav_box_ai_agent"): # New button
+            navigate_to("Box AI Agent")
             st.rerun()
         # --- End Restored Navigation --- 
         
@@ -364,7 +372,11 @@ else:
     elif st.session_state.current_page == "Rule Builder":
         st.title("Validation Rule Builder")
         show_rule_overview()
-        
+
+        elif st.session_state.current_page == "Box AI Agent": # New page rendering
+            # The title will be set within create_box_ai_agent_ui() or box_ai_agent_workflow_tab()
+            box_ai_agent_workflow_tab()
+
     else:
         # Fallback if page is unknown
         st.error(f"Unknown page: {st.session_state.current_page}")

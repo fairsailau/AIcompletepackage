@@ -3,6 +3,8 @@ import pandas as pd
 from typing import Dict, List, Any, Union # Added Union
 import json
 import logging
+from modules.metadata_extraction_integration import display_enhanced_metadata_confidence
+from modules.document_categorization_integration import display_enhanced_confidence_visualization
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -256,7 +258,23 @@ def view_results():
                 st.write(f"**File Name:** {detailed_data.get('file_name', 'N/A')}")
                 st.write(f"**File ID:** {selected_file_id_for_detail}")
                 st.write(f"**Document Type:** {detailed_data.get('document_type', 'N/A')}")
-                
+
+                # Display Document Categorization Confidence
+                categorization_main_results = st.session_state.get('document_categorization', {}).get('results', [])
+                current_file_id_str = str(selected_file_id_for_detail)
+                file_categorization_result = next((cat_res for cat_res in categorization_main_results if str(cat_res.get('file_id')) == current_file_id_str), None)
+
+                if file_categorization_result and file_categorization_result.get('enhanced_confidence_factors'):
+                    st.subheader("Document Category Confidence")
+                    display_enhanced_confidence_visualization(result=file_categorization_result, show_explanations=True)
+                elif file_categorization_result and file_categorization_result.get('multi_factor_confidence'): # Fallback for older structure if needed
+                    st.subheader("Document Category Confidence")
+                    st.warning("Displaying standard categorization confidence. For enhanced view, reprocess with the latest categorization module.")
+                    # This part assumes display_enhanced_confidence_visualization can handle the older structure or you have a fallback.
+                    # For simplicity, we'll attempt to use it; it should ideally degrade gracefully or show what's available.
+                    display_enhanced_confidence_visualization(result=file_categorization_result, show_explanations=True)
+
+
                 doc_summary = detailed_data.get('document_validation_summary', {})
                 st.markdown(f"**Overall Document Suggested Confidence:** <span style='color:{get_confidence_color(doc_summary.get('overall_document_confidence_suggestion', 'N/A'))};'>{doc_summary.get('overall_document_confidence_suggestion', 'N/A')}</span>", unsafe_allow_html=True)
                 st.markdown(f"**Mandatory Fields Status:** <span style='color:{'green' if doc_summary.get('mandatory_fields_status', '').lower() == 'passed' else 'red'};'>{doc_summary.get('mandatory_fields_status', 'N/A')}</span>", unsafe_allow_html=True)
@@ -279,7 +297,10 @@ def view_results():
                     
                     # Display field value and confidences
                     st.markdown(f"**{key}**: `{val}`")
-                    st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;AI Confidence: <span style='color:{get_confidence_color(ai_conf)};'>{ai_conf}</span> | Validation Status: <span style='color:{style_confidence_and_status(val_status).split(':')[1].strip()};'>{val_status}</span> | Adjusted Confidence: <span style='color:{get_confidence_color(adj_conf)};'>{adj_conf}</span>", unsafe_allow_html=True)
+                    # Call the new display function for enhanced metadata confidence
+                    # Pass the 'raw_ai_response' part of detailed_data, as that's where fieldname_enhanced_confidence keys are.
+                    raw_response_for_field_confidence = detailed_data.get('raw_ai_response', {})
+                    display_enhanced_metadata_confidence(field_name=key, extraction_result=raw_response_for_field_confidence, show_explanations=True)
                     
                     # Display validation rule details for this field
                     validations = field_info.get('validations', [])

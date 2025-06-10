@@ -1,6 +1,8 @@
 import streamlit as st
 import logging
 import json
+from modules.document_categorization_integration import process_with_enhanced_confidence, display_enhanced_confidence_visualization
+from modules.metadata_extraction_integration import extract_document_text_from_box
 import requests
 import re
 import os
@@ -316,14 +318,24 @@ def document_categorization():
                                 result.get("reasoning", ""),
                                 [dtype["name"] for dtype in st.session_state.document_types]
                             )
-                            result["multi_factor_confidence"] = multi_factor_confidence
+                            # Calculate multi-factor confidence
+                            document_features = extract_document_features(file["id"])
                             
-                            # Apply confidence calibration
-                            calibrated_confidence = apply_confidence_calibration(
-                                result["document_type"],
-                                multi_factor_confidence.get("overall", result["confidence"])
+                            # Enhanced Confidence Framework
+                            client = st.session_state.client
+                            document_text = extract_document_text_from_box(client, file["id"])
+                            category_descriptions = {doc_type['name']: doc_type['description'] for doc_type in st.session_state.document_types}
+                            valid_categories = [doc_type['name'] for doc_type in st.session_state.document_types]
+
+                            enhanced_result = process_with_enhanced_confidence(
+                                original_result=result,
+                                document_features=document_features,
+                                valid_categories=valid_categories,
+                                document_text=document_text,
+                                category_descriptions=category_descriptions,
+                                use_enhanced=True
                             )
-                            result["calibrated_confidence"] = calibrated_confidence
+                            result = enhanced_result
                             
                             # Add to results
                             st.session_state.document_categorization["results"].append(result)
@@ -388,14 +400,24 @@ def document_categorization():
                                     combined_result.get("reasoning", ""),
                                     [dtype["name"] for dtype in st.session_state.document_types]
                                 )
-                                combined_result["multi_factor_confidence"] = multi_factor_confidence
-                                
-                                # Apply confidence calibration
-                                calibrated_confidence = apply_confidence_calibration(
-                                    combined_result["document_type"],
-                                    multi_factor_confidence.get("overall", combined_result["confidence"])
+                                # Calculate multi-factor confidence
+                                document_features = extract_document_features(file["id"])
+
+                                # Enhanced Confidence Framework
+                                client = st.session_state.client
+                                document_text = extract_document_text_from_box(client, file["id"])
+                                category_descriptions = {doc_type['name']: doc_type['description'] for doc_type in st.session_state.document_types}
+                                valid_categories = [doc_type['name'] for doc_type in st.session_state.document_types]
+
+                                enhanced_result = process_with_enhanced_confidence(
+                                    original_result=combined_result,
+                                    document_features=document_features,
+                                    valid_categories=valid_categories,
+                                    document_text=document_text,
+                                    category_descriptions=category_descriptions,
+                                    use_enhanced=True
                                 )
-                                combined_result["calibrated_confidence"] = calibrated_confidence
+                                combined_result = enhanced_result
                                 
                                 # Add to results
                                 st.session_state.document_categorization["results"].append(combined_result)
@@ -441,14 +463,25 @@ def document_categorization():
                                     result.get("reasoning", ""),
                                     [dtype["name"] for dtype in st.session_state.document_types]
                                 )
-                                result["multi_factor_confidence"] = multi_factor_confidence
-                                
-                                # Apply confidence calibration
-                                calibrated_confidence = apply_confidence_calibration(
-                                    result["document_type"],
-                                    multi_factor_confidence.get("overall", result["confidence"])
-                                )
-                                result["calibrated_confidence"] = calibrated_confidence
+                                # Calculate multi-factor confidence for the final result
+                                if "model1_result" in result: # Ensure there's a base result for feature extraction
+                                    document_features = extract_document_features(file["id"])
+
+                                    # Enhanced Confidence Framework
+                                    client = st.session_state.client
+                                    document_text = extract_document_text_from_box(client, file["id"])
+                                    category_descriptions = {doc_type['name']: doc_type['description'] for doc_type in st.session_state.document_types}
+                                    valid_categories = [doc_type['name'] for doc_type in st.session_state.document_types]
+
+                                    enhanced_result = process_with_enhanced_confidence(
+                                        original_result=result,
+                                        document_features=document_features,
+                                        valid_categories=valid_categories,
+                                        document_text=document_text,
+                                        category_descriptions=category_descriptions,
+                                        use_enhanced=True
+                                    )
+                                    result = enhanced_result
                             
                             # Add to results
                             st.session_state.document_categorization["results"].append(result)
@@ -715,9 +748,9 @@ def display_categorization_results():
                     st.write(f"**Overall Confidence:** <span style='color:{confidence_color}'>{confidence_text} ({confidence:.2f})</span>", unsafe_allow_html=True)
                     
                     # Display confidence breakdown if available - FIXED: No nested expanders
-                    if "multi_factor_confidence" in result:
+                    if "enhanced_confidence_factors" in result or "multi_factor_confidence" in result: # Check for new or old keys
                         st.write("### Confidence Breakdown")
-                        display_confidence_visualization(result["multi_factor_confidence"])
+                        display_enhanced_confidence_visualization(result) # Use the new visualization
                     
                     # Sequential Consensus Details
                     if "sequential_consensus" in result:
