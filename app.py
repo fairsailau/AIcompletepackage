@@ -7,6 +7,10 @@ st.set_page_config(layout="wide")
 import os
 import sys
 import logging
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 import time
 from datetime import datetime, timedelta
 from pathlib import Path

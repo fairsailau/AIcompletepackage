@@ -36,12 +36,18 @@ def integrate_box_ai_agent_with_app():
     if 'box_ai_processing_agent' not in st.session_state:
         # Default boundaries
         boundaries = ProcessingBoundaries()
-        
+
+        # Attempt to load OpenAI API key from Streamlit secrets
+        openai_api_key = None
+        if hasattr(st, 'secrets') and "OPENAI_API_KEY" in st.secrets:
+            openai_api_key = st.secrets["OPENAI_API_KEY"]
+
         # Create agent
         st.session_state.box_ai_processing_agent = BoxAIDocumentProcessingAgent(
             client=st.session_state.client,
             boundaries=boundaries,
-            enable_human_loop=True
+            enable_human_loop=True,
+            openai_api_key=openai_api_key # Pass the loaded key
         )
     
     # Update tabs if needed
