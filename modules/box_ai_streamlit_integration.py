@@ -8,6 +8,7 @@ Streamlit UI, including tab creation, navigation, and UI components.
 import streamlit as st
 import pandas as pd
 import time
+import logging
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 
@@ -19,6 +20,8 @@ from modules.box_ai_agent import (
     DocumentProcessingResult,
     create_box_ai_agent_ui
 )
+
+logger = logging.getLogger(__name__)
 
 def integrate_box_ai_agent_with_app():
     """
@@ -39,8 +42,20 @@ def integrate_box_ai_agent_with_app():
 
         # Attempt to load OpenAI API key from Streamlit secrets
         openai_api_key = None
-        if hasattr(st, 'secrets') and "OPENAI_API_KEY" in st.secrets:
-            openai_api_key = st.secrets["OPENAI_API_KEY"]
+        if hasattr(st, 'secrets'):
+            if "box_dev" in st.secrets and isinstance(st.secrets["box_dev"], dict) and "OPENAI_API_KEY" in st.secrets["box_dev"]:
+                openai_api_key = st.secrets["box_dev"]["OPENAI_API_KEY"]
+                if openai_api_key:
+                    logger.info("Loaded OPENAI_API_KEY from st.secrets['box_dev']")
+            elif "OPENAI_API_KEY" in st.secrets: # Fallback for top-level key
+                openai_api_key = st.secrets["OPENAI_API_KEY"]
+                if openai_api_key:
+                    logger.info("Loaded OPENAI_API_KEY directly from st.secrets")
+
+            if not openai_api_key:
+                logger.warning("OPENAI_API_KEY not found in st.secrets under 'box_dev' or at top level.")
+        else:
+            logger.warning("st.secrets not available. OPENAI_API_KEY must be set as an environment variable.")
 
         # Create agent
         st.session_state.box_ai_processing_agent = BoxAIDocumentProcessingAgent(
