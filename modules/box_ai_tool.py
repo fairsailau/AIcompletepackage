@@ -31,8 +31,9 @@ class BoxAITool(BaseTool):
     name: str = "box_ai_query"
     description: str = "Query Box AI to process documents, categorize them, or extract metadata"
     args_schema: Type[BaseModel] = BoxAIQueryInput
+    box_client: Any = None # Field declaration
     
-    def __init__(self, box_client):
+    def __init__(self, box_client: Any): # Type hint for parameter
         """Initialize the Box AI Tool with a Box client."""
         super().__init__()
         self.box_client = box_client
