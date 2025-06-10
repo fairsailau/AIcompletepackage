@@ -106,19 +106,6 @@ class BoxAIDocumentProcessingAgent:
             api_key=openai_api_key # Pass the API key
         )
 
-        # API Key Check and Logging
-        resolved_api_key = self.llm.api_key
-
-        if not resolved_api_key:
-            logger.error("OpenAI API key is not configured for ChatOpenAI. " +
-                         "Please pass it as a parameter or set the OPENAI_API_KEY environment variable.")
-        elif openai_api_key:
-            logger.info("ChatOpenAI initialized with API key provided via parameter.")
-        elif os.environ.get("OPENAI_API_KEY"):
-            logger.info("ChatOpenAI initialized with API key from OPENAI_API_KEY environment variable.")
-        else:
-            logger.warning("ChatOpenAI has an API key, but its source (parameter or direct env var) is not immediately clear from inputs to this class. Review configuration if issues persist.")
-
         # Initialize memory
         self.memory = ConversationBufferMemory(
             memory_key="chat_history",
