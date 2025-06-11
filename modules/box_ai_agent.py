@@ -313,7 +313,7 @@ Always provide detailed reasoning for your decisions and be conservative when in
                 result.file_name = file_info.get("file_name", f"File {file_id}")
             
             # Extract field names for metadata extraction
-            field_names = [field.get("name") for field in field_definitions if "name" in field]
+            field_names = [field.get("key") for field in field_definitions if "key" in field] # Changed "name" to "key"
             # Removed the erroneous log line that accessed result.success here.
             logger.info(f"File {file_id}: Pre-workflow. Metadata fields to attempt: {field_names if field_names else 'None'}")
 
