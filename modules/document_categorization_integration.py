@@ -173,10 +173,10 @@ def display_enhanced_confidence_visualization(result: Dict[str, Any], show_expla
         
         # Display explanations if requested
         if show_explanations and explanations:
-            with st.expander("Confidence Factor Explanations", expanded=False):
-                for factor, explanation in explanations.items():
-                    if factor != "overall":  # Overall is shown separately
-                        st.markdown(f"**{factor.replace('_', ' ').title()}**: {explanation}")
+            st.subheader("Confidence Factor Explanations") # Changed from st.expander
+            for factor, explanation in explanations.items():
+                if factor != "overall":  # Overall is shown separately
+                    st.markdown(f"**{factor.replace('_', ' ').title()}**: {explanation}")
     
     elif "multi_factor_confidence" in result:
         # Original confidence framework
