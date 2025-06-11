@@ -117,7 +117,7 @@ Reasoning: [Your detailed reasoning for the categorization]
 """
             # Prepare request body for /ai/ask
             request_body = {
-                'mode': 'question_answering',
+                'mode': 'text_gen', # Changed from 'question_answering'
                 'prompt': prompt, # 'prompt' is the variable already holding the constructed categorization question
                 'items': [{'type': 'file', 'id': file_id}]
             }
