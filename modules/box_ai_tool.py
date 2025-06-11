@@ -131,56 +131,54 @@ Reasoning: [Your detailed reasoning for the categorization]
                 if answer_text is not None:
                     # Parse the answer_text (existing logic should be mostly fine)
                     parsed_category = "Other"
-                        parsed_confidence = 0.0
-                        parsed_reasoning = "No reasoning provided by AI or parsing failed."
+                    parsed_confidence = 0.0
+                    parsed_reasoning = "No reasoning provided by AI or parsing failed."
 
-                        cat_match = re.search(r"Category: (.*)", answer_text)
-                        if cat_match:
-                            parsed_category = cat_match.group(1).strip()
+                    cat_match = re.search(r"Category: (.*)", answer_text)
+                    if cat_match:
+                        parsed_category = cat_match.group(1).strip()
 
-                        conf_match = re.search(r"Confidence: ([\d.]+)", answer_text)
-                        if conf_match:
-                            try:
-                                parsed_confidence = float(conf_match.group(1).strip())
-                            except ValueError:
-                                logger.warning(f"Could not parse confidence from AI response: {conf_match.group(1)} for file {file_id}")
-                                parsed_confidence = 0.1 # Default to low if parsing fails
+                    conf_match = re.search(r"Confidence: ([\d.]+)", answer_text)
+                    if conf_match:
+                        try:
+                            parsed_confidence = float(conf_match.group(1).strip())
+                        except ValueError:
+                            logger.warning(f"Could not parse confidence from AI response: {conf_match.group(1)} for file {file_id}")
+                            parsed_confidence = 0.1 # Default to low if parsing fails
 
-                        # Try to get reasoning, ensuring it's not part of Category or Confidence lines
-                        reasoning_lines = []
-                        for line in answer_text.split('\n'):
-                            if line.startswith("Reasoning:"):
-                                reasoning_lines.append(line.replace("Reasoning:", "").strip())
-                            elif not line.startswith("Category:") and not line.startswith("Confidence:"):
-                                reasoning_lines.append(line.strip())
+                    # Try to get reasoning, ensuring it's not part of Category or Confidence lines
+                    reasoning_lines = []
+                    for line in answer_text.split('\n'):
+                        if line.startswith("Reasoning:"):
+                            reasoning_lines.append(line.replace("Reasoning:", "").strip())
+                        elif not line.startswith("Category:") and not line.startswith("Confidence:"):
+                            reasoning_lines.append(line.strip())
 
-                        if reasoning_lines:
-                            parsed_reasoning = "\n".join(reasoning_lines).strip()
-                        elif cat_match and conf_match : # If only cat and conf found, but no explicit Reasoning: line
-                             # Check if there's text after the confidence line
-                            answer_after_conf = answer_text.split(conf_match.group(0),1)[-1].strip()
-                            if answer_after_conf:
-                                parsed_reasoning = answer_after_conf
+                    if reasoning_lines:
+                        parsed_reasoning = "\n".join(reasoning_lines).strip()
+                    elif cat_match and conf_match : # If only cat and conf found, but no explicit Reasoning: line
+                            # Check if there's text after the confidence line
+                        answer_after_conf = answer_text.split(conf_match.group(0),1)[-1].strip()
+                        if answer_after_conf:
+                            parsed_reasoning = answer_after_conf
 
-                        # Ensure the parsed category is one of the requested categories, otherwise set to "Other"
-                        if parsed_category not in categories_from_query and "Other" in categories_from_query:
-                            logger.warning(f"AI returned category '{parsed_category}' not in requested list for file {file_id}. Defaulting to 'Other'.")
-                            parsed_category = "Other"
-                        elif parsed_category not in categories_from_query:
-                             logger.warning(f"AI returned category '{parsed_category}' not in requested list for file {file_id} and 'Other' not available. Keeping AI category.")
+                    # Ensure the parsed category is one of the requested categories, otherwise set to "Other"
+                    if parsed_category not in categories_from_query and "Other" in categories_from_query:
+                        logger.warning(f"AI returned category '{parsed_category}' not in requested list for file {file_id}. Defaulting to 'Other'.")
+                        parsed_category = "Other"
+                    elif parsed_category not in categories_from_query:
+                            logger.warning(f"AI returned category '{parsed_category}' not in requested list for file {file_id} and 'Other' not available. Keeping AI category.")
 
 
-                        return {
-                            "success": True,
-                            "document_type": parsed_category,
-                            "confidence": parsed_confidence,
-                            "reasoning": parsed_reasoning
-                        }
-                    else:
-                        logger.warning(f"Categorization Q&A for file {file_id} missing 'question_answering' or 'answer' in entry: {entry}")
-                        return {"success": False, "error": "Malformed response from Box AI /ai/ask (missing answer field)", "response_data": response_data}
-                # No 'entries' structure to check for /ai/ask, direct 'answer' is key
-
+                    return {
+                        "success": True,
+                        "document_type": parsed_category,
+                        "confidence": parsed_confidence,
+                        "reasoning": parsed_reasoning
+                    }
+                else:
+                    logger.warning(f"Categorization (via /ai/ask) for file {file_id} missing 'answer' in response: {response_data}")
+                    return {"success": False, "error": "Malformed response from Box AI /ai/ask (missing answer field)", "response_data": response_data}
             # Handle non-200 error or unexpected response
             logger.error(f"Box AI categorization (via /ai/ask) failed for file {file_id}: {response.status_code}, Response: {response.text[:500]}")
             return {
