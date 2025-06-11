@@ -201,76 +201,95 @@ Reasoning: [Your detailed reasoning for the categorization]
             }
     
     def _run_metadata_extraction(self, file_id: str, query: str, headers: Dict[str, str]) -> Dict[str, Any]:
-        """Run metadata extraction using Box AI."""
+        """Run metadata extraction using Box AI /ai/ask endpoint with JSON output."""
         try:
-            # Use Box AI API to extract metadata
-            api_url = 'https://api.box.com/2.0/ai/text_extraction'
+            api_url = 'https://api.box.com/2.0/ai/ask' # Changed API URL
             
-            # Parse fields from query if provided
+            # Parse fields from the original query parameter or use defaults
             fields = []
             if "fields:" in query.lower():
                 fields_text = query.lower().split("fields:")[1].strip()
                 fields = [field.strip() for field in fields_text.split(",")]
             
-            # Default fields if not specified
-            if not fields:
-                fields = [
-                    "invoice_number",
-                    "invoice_date",
-                    "due_date",
-                    "vendor_name",
-                    "total_amount"
-                ]
+            if not fields: # Default fields if none provided in query
+                fields = ["invoice_number", "invoice_date", "due_date", "vendor_name", "total_amount"]
             
-            # Prepare request body
+            logger.info(f"Requesting metadata extraction for fields: {fields} on file {file_id}")
+
+            # Construct the prompt for JSON output
+            fields_list_str = "\n".join([f"- \"{f}\"" for f in fields])
+            extraction_prompt = f"""Please analyze the document and extract information for the following fields:
+{fields_list_str}
+
+Respond ONLY with a single, valid JSON object where the keys are the exact field names provided above (as strings), and the values are the extracted information.
+If a field is not found or not applicable, use a JSON null value or an empty string for its value. Do not include any other text, explanations, or markdown formatting around the JSON object.
+Example of expected JSON output format for fields "field_key1", "field_key2", "field_key3":
+{{"field_key1": "extracted value 1", "field_key2": null, "field_key3": "value 3"}}
+
+JSON Response:
+"""
+            # Prepare request body for /ai/ask
             request_body = {
-                'items': [{'id': file_id, 'type': 'file'}],
-                'task': {
-                    'type': 'key_value_extraction',
-                    'keys': fields
-                }
+                'mode': 'text_gen', # Using text_gen for structured JSON output
+                'prompt': extraction_prompt,
+                'items': [{'type': 'file', 'id': file_id}]
             }
             
-            # Make API request
             response = requests.post(api_url, headers=headers, json=request_body, timeout=180)
             
+            result = {"success": False, "metadata": {}} # Initialize result
+
             if response.status_code == 200:
                 response_data = response.json()
-                
-                # Extract metadata result
-                if 'entries' in response_data and len(response_data['entries']) > 0:
-                    entry = response_data['entries'][0]
-                    if 'key_value_extraction' in entry:
-                        extractions = entry['key_value_extraction']
+                answer_text = response_data.get('answer')
+                logger.info(f"Box AI /ai/ask raw answer for metadata extraction on file {file_id}: '{answer_text}'")
+
+                if answer_text is not None:
+                    try:
+                        # Attempt to find JSON block if there's any surrounding text (though prompt asks not to)
+                        json_match = re.search(r"```json\s*([\s\S]*?)\s*```|({[\s\S]*})", answer_text)
+                        json_string_to_parse = None
+                        if json_match:
+                            json_string_to_parse = json_match.group(1) if json_match.group(1) else json_match.group(2)
                         
-                        # Format result
-                        result = {
-                            "success": True,
-                            "metadata": {}
-                        }
+                        if not json_string_to_parse: # Fallback if no explicit JSON block found
+                            json_string_to_parse = answer_text
+
+                        extracted_data = json.loads(json_string_to_parse.strip())
                         
-                        # Process each extracted field
-                        for extraction in extractions:
-                            key = extraction.get('key', '')
-                            value = extraction.get('value', '')
-                            confidence = extraction.get('confidence', 0.0)
-                            
-                            # Add to result
-                            result["metadata"][key] = value
-                            result["metadata"][f"{key}_confidence"] = self._confidence_to_category(confidence)
-                            result["metadata"][f"{key}_confidence_numeric"] = confidence
+                        if not isinstance(extracted_data, dict):
+                            raise json.JSONDecodeError("AI response was a JSON literal, not a JSON object.", json_string_to_parse, 0)
+
+                        result["metadata"] = {}
+                        for field_key in fields: # Iterate through originally requested fields
+                            value = extracted_data.get(field_key) # Use .get() for safety
+                            result["metadata"][field_key] = value if value is not None else "" # Ensure not None for consistency, use empty string
+
+                            # Set default confidence as /ai/ask text_gen does not provide per-field confidence
+                            result["metadata"][f"{field_key}_confidence"] = "Medium"
+                            result["metadata"][f"{field_key}_confidence_numeric"] = 0.6
+                        result["success"] = True
+                        logger.info(f"Successfully parsed JSON metadata for file {file_id}: {result['metadata']}")
                         
-                        return result
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to parse JSON response from /ai/ask for metadata extraction on file {file_id}. Error: {e}. Raw answer: '{answer_text}'")
+                        result["error"] = "AI response was not valid JSON or not a JSON object."
+                        result["metadata"] = {"raw_answer": answer_text} # Store raw answer if parsing fails
+                else:
+                    logger.warning(f"Metadata extraction (via /ai/ask) for file {file_id} missing 'answer' in response: {response_data}")
+                    result["error"] = "Malformed response from Box AI /ai/ask (missing answer field)."
+            else:
+                logger.error(f"Box AI metadata extraction (via /ai/ask) failed for file {file_id}: {response.status_code}, Response: {response.text[:500]}")
+                result["error"] = f"Box AI metadata extraction (via /ai/ask) failed: Status {response.status_code}"
+                result["metadata"] = {"raw_response_text": response.text[:500] if response.text else "No response text"}
             
-            # Handle error or unexpected response
-            return {
-                "success": False,
-                "error": f"Box AI metadata extraction failed: {response.status_code}",
-                "response": response.text if response.text else "No response"
-            }
+            return result
             
+        except requests.exceptions.RequestException as req_e:
+            logger.error(f"RequestException during Box AI metadata extraction (via /ai/ask) for file {file_id}: {str(req_e)}")
+            return {"success": False, "error": f"RequestException: {str(req_e)}", "metadata": {}}
         except Exception as e:
-            logger.error(f"Error in Box AI metadata extraction: {str(e)}")
+            logger.error(f"Error in Box AI metadata extraction (via /ai/ask) for file {file_id}: {str(e)}")
             return {
                 "success": False,
                 "error": str(e)
