@@ -314,65 +314,82 @@ Always provide detailed reasoning for your decisions and be conservative when in
             
             # Extract field names for metadata extraction
             field_names = [field.get("name") for field in field_definitions if "name" in field]
-            
+            logger.info(f"File {file_id}: Pre-metadata extraction. result.success: {result.success}. Metadata fields to attempt: {field_names if field_names else 'None'}") # Log field_names
+
             # Process document using Box AI
             processing_result = self.box_ai_processor.process_document_workflow(
                 file_id=file_id,
                 categories=categories,
                 metadata_fields=field_names
             )
-            
-            # Update result with processing results
-            cat_result = processing_result.get("categorization") # Get the full categorization dict
-            logger.info(f"Agent received categorization result for file {file_id}: {cat_result}")
+            logger.info(f"File {file_id}: Agent received processing_result from workflow: {processing_result}") # Log entire processing_result
 
-            if cat_result and cat_result.get("success", False):
+            # Initialize confidence_scores if it's None
+            if result.confidence_scores is None:
+                result.confidence_scores = {"overall": 0.0, "categorization": 0.0, "metadata": {}}
+            else: # Ensure keys exist
+                result.confidence_scores.setdefault("overall", 0.0)
+                result.confidence_scores.setdefault("categorization", 0.0)
+                result.confidence_scores.setdefault("metadata", {})
+
+            # Update result with categorization processing outcome
+            categorization_details_from_workflow = processing_result.get("categorization", {})
+            if processing_result.get("success", False) and categorization_details_from_workflow.get("document_type") != "Error" and categorization_details_from_workflow.get("success",True): # Check success of cat part
+                retrieved_doc_type = categorization_details_from_workflow.get("document_type", "Other")
+                retrieved_confidence = categorization_details_from_workflow.get("confidence", 0.0)
+                retrieved_reasoning = categorization_details_from_workflow.get("reasoning", "")
+
                 result.categorization_result = {
-                    "document_type": cat_result.get("document_type", "Other"),
-                    "confidence": cat_result.get("confidence", 0.0),
-                    "reasoning": cat_result.get("reasoning", "")
+                    "document_type": retrieved_doc_type,
+                    "confidence": retrieved_confidence,
+                    "reasoning": retrieved_reasoning
                 }
-                # Ensure confidence_scores dictionary is initialized
-                if result.confidence_scores is None: result.confidence_scores = {}
-                result.confidence_scores["categorization"] = cat_result.get("confidence", 0.0)
+                result.confidence_scores["categorization"] = retrieved_confidence
+                logger.info(f"File {file_id}: Workflow Categorization SUCCEEDED. Type: '{retrieved_doc_type}', Conf: {retrieved_confidence:.2f}")
             else:
+                error_reason = categorization_details_from_workflow.get("reasoning", categorization_details_from_workflow.get("error", processing_result.get("error", "Unknown categorization error in workflow")))
                 result.categorization_result = {
                     "document_type": "Error",
                     "confidence": 0.0,
-                    "reasoning": cat_result.get("error", "Unknown error") if cat_result else "Categorization failed or produced no result."
+                    "reasoning": error_reason
                 }
-                # Ensure confidence_scores dictionary is initialized
-                if result.confidence_scores is None: result.confidence_scores = {}
                 result.confidence_scores["categorization"] = 0.0
-                # result.success = False # This is implicitly handled as processing_result["success"] would be false
+                result.success = False # Mark overall processing for this file as failed due to categorization failure
+                logger.warning(f"File {file_id}: Workflow Categorization FAILED or Errored. Reason: {error_reason}")
 
-            result.metadata_result = processing_result.get("metadata", {})
-            
-            # Initialize confidence_scores if it's None (e.g. if categorization failed early)
-            if result.confidence_scores is None:
-                result.confidence_scores = {"overall": 0.0, "categorization": 0.0, "metadata": {}}
-            else: # Ensure keys exist even if already initialized
-                result.confidence_scores.setdefault("overall", 0.0)
-                result.confidence_scores.setdefault("categorization", 0.0) # Will be updated if cat_result was successful
-                result.confidence_scores.setdefault("metadata", {})
+            # Update result with metadata processing outcome (only if categorization was successful)
+            if result.success:
+                metadata_details_from_workflow = processing_result.get("metadata", {})
+                logger.info(f"File {file_id}: Agent received metadata part of workflow: {metadata_details_from_workflow}")
+                if metadata_details_from_workflow: # Check if metadata_details_from_workflow is not None
+                    result.metadata_result = metadata_details_from_workflow
+                    # Extract numeric confidences for metadata
+                    for key, value in result.metadata_result.items():
+                        if key.endswith("_confidence_numeric") and isinstance(value, (int, float)):
+                            field_name = key.replace("_confidence_numeric", "")
+                            result.confidence_scores["metadata"][field_name] = value
+                else:
+                    logger.info(f"File {file_id}: No metadata details found in workflow result or metadata extraction skipped.")
+                    result.metadata_result = {} # Ensure it's an empty dict
+            else: # Categorization failed, so metadata was likely skipped or irrelevant
+                logger.info(f"File {file_id}: Metadata processing skipped due to categorization failure.")
+                result.metadata_result = {}
 
-            # Overall confidence from workflow, or re-calculate if needed (though workflow should provide it)
+            # Ensure confidence_scores["metadata"] exists even if empty
+            if "metadata" not in result.confidence_scores:
+                result.confidence_scores["metadata"] = {}
+
+            # Overall confidence from workflow
             result.confidence_scores["overall"] = processing_result.get("overall_confidence", 0.0)
 
-
-            # Extract metadata confidence scores
-            if processing_result.get("metadata"):
-                metadata = processing_result["metadata"]
-                for key, value in metadata.items():
-                    if key.endswith("_confidence_numeric") and isinstance(value, (int, float)):
-                        field_name = key.replace("_confidence_numeric", "")
-                        result.confidence_scores["metadata"][field_name] = value
-            
-            # Check confidence boundaries
-            confidence_scores_json = json.dumps({
-                "categorization_confidence": result.confidence_scores["categorization"],
-                "metadata_confidences": result.confidence_scores["metadata"]
-            })
+            # Check confidence boundaries (only if overall processing was successful so far)
+            confidence_scores_json = "{}" # Default to empty if issues
+            if result.success:
+                confidence_scores_json = json.dumps({
+                    "categorization_confidence": result.confidence_scores["categorization"],
+                    "metadata_confidences": result.confidence_scores.get("metadata", {}) # Use .get for safety
+                })
+            logger.info(f"File {file_id}: Calling _check_confidence_boundaries with: {confidence_scores_json}")
             
             boundaries_result = json.loads(self._check_confidence_boundaries(confidence_scores_json))
             action = boundaries_result.get("action", "human_review")
