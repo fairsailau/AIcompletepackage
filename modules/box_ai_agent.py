@@ -396,12 +396,33 @@ Always provide detailed reasoning for your decisions and be conservative when in
             # If the tool execution itself failed, set status to ERROR and skip confidence checks
             if not tool_execution_successful:
                 result.status = ProcessingStatus.ERROR
-                # Prefer more specific error from categorization or metadata if available
-                cat_error = result.categorization_result.get("reasoning", "") if result.categorization_result.get("document_type") == "Error" else ""
-                meta_error = result.metadata_result.get("error", "") if result.metadata_result else ""
-                error_priority = [cat_error, meta_error, "Tool execution failed or sub-task reported error."]
-                result.error_message = next((err for err in error_priority if err), "Tool execution failed")
-                logger.error(f"File {file_id}: Tool execution marked as FAILED. Final error: {result.error_message}")
+
+                final_error_message = "Tool execution failed." # Default
+
+                # Check for error in metadata part of the workflow result first
+                # as it might be more specific if categorization succeeded but metadata failed.
+                # processing_result is the direct output of self.box_ai_processor.process_document_workflow
+                workflow_meta_details = processing_result.get("metadata", {})
+                if isinstance(workflow_meta_details, dict) and workflow_meta_details.get("error"):
+                    final_error_message = f"Metadata extraction failed: {workflow_meta_details.get('error')}"
+
+                # Then check categorization part if metadata didn't have a specific error or if it wasn't even run
+                workflow_cat_details = processing_result.get("categorization", {})
+                # Check if categorization part itself reported failure or was marked as Error type
+                # The `tool_execution_successful` being False might be due to `processing_result.get("success")` being False,
+                # or because we explicitly set it to False if `categorization_details_from_workflow.get("document_type") == "Error"`.
+                # So, if final_error_message is still the default, and categorization result is an error type, use its reasoning.
+                if final_error_message == "Tool execution failed." and result.categorization_result.get("document_type") == "Error":
+                    cat_error_reason = result.categorization_result.get("reasoning") # This now holds the error from cat part
+                    if cat_error_reason:
+                        final_error_message = f"Categorization failed: {cat_error_reason}"
+
+                # If processing_result itself had a top-level 'error' key (e.g. from BoxAIDocumentProcessor if the whole workflow failed very early)
+                if final_error_message == "Tool execution failed." and processing_result.get("error"):
+                    final_error_message = processing_result.get("error")
+
+                result.error_message = final_error_message
+                logger.error(f"File {file_id}: Tool execution marked as FAILED. Final error for DocumentProcessingResult: '{result.error_message}' based on processing_result: {processing_result}")
             else:
                 # Proceed with confidence boundary checks
                 confidence_scores_json = json.dumps({
