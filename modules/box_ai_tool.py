@@ -168,10 +168,11 @@ Reasoning: [Your detailed reasoning for the categorization]
                         logger.warning(f"AI returned category '{parsed_category}' not in requested list for file {file_id}. Defaulting to 'Other'.")
                         parsed_category = "Other"
                     elif parsed_category not in categories_from_query:
-                            logger.warning(f"AI returned category '{parsed_category}' not in requested list for file {file_id} and 'Other' not available. Keeping AI category.")
+                        logger.warning(f"AI returned category '{parsed_category}' not in requested list for file {file_id} and 'Other' not available. Keeping AI category.")
+                    # No specific 'else' is needed if the category is already valid or has been defaulted/kept.
 
-                        logger.info(f"Parsed from /ai/ask for file {file_id} - Category: '{parsed_category}', Confidence: {parsed_confidence}, Reasoning: '{parsed_reasoning[:100]}...'")
-
+                    # Correctly indented log and return statement:
+                    logger.info(f"Parsed from /ai/ask for file {file_id} - Category: '{parsed_category}', Confidence: {parsed_confidence}, Reasoning: '{parsed_reasoning[:100]}...'")
                     return {
                         "success": True,
                         "document_type": parsed_category,
