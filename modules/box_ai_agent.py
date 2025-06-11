@@ -314,10 +314,7 @@ Always provide detailed reasoning for your decisions and be conservative when in
             
             # Extract field names for metadata extraction
             field_names = [field.get("name") for field in field_definitions if "name" in field]
-            logger.info(f"File {file_id}: Pre-metadata extraction. result.success: {result.success}. Metadata fields to attempt: {field_names if field_names else 'None'}") # Log field_names
-
-            # Extract field names for metadata extraction
-            field_names = [field.get("name") for field in field_definitions if "name" in field]
+            # Removed the erroneous log line that accessed result.success here.
             logger.info(f"File {file_id}: Pre-workflow. Metadata fields to attempt: {field_names if field_names else 'None'}")
 
             # Process document using Box AI
