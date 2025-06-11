@@ -435,17 +435,8 @@ Always provide detailed reasoning for your decisions and be conservative when in
                 if self.boundaries.escalate_on_field_inconsistency:
                     # Placeholder: Implement actual check for field inconsistencies
                     pass
-            
-        except Exception as e:
-                # This would check for category changes in a real implementation
-                # For now, we'll just use a placeholder
-                pass
-            
-            if self.boundaries.escalate_on_field_inconsistency and result.status != ProcessingStatus.HUMAN_REVIEW_REQUIRED:
-                # This would check for field inconsistencies in a real implementation
-                # For now, we'll just use a placeholder
-                pass
-            
+            # This is the end of the 'else' block for 'if not tool_execution_successful:'
+        # The main 'except' block for the 'try' that starts after initializing 'result'
         except Exception as e:
             logger.error(f"Error processing document {file_id}: {str(e)}")
             result.status = ProcessingStatus.ERROR
