@@ -127,6 +127,7 @@ Reasoning: [Your detailed reasoning for the categorization]
             if response.status_code == 200:
                 response_data = response.json()
                 answer_text = response_data.get('answer') # Get answer directly from /ai/ask response
+                logger.info(f"Box AI /ai/ask raw answer for file {file_id}: '{answer_text}'")
                 
                 if answer_text is not None:
                     # Parse the answer_text (existing logic should be mostly fine)
@@ -169,6 +170,7 @@ Reasoning: [Your detailed reasoning for the categorization]
                     elif parsed_category not in categories_from_query:
                             logger.warning(f"AI returned category '{parsed_category}' not in requested list for file {file_id} and 'Other' not available. Keeping AI category.")
 
+                        logger.info(f"Parsed from /ai/ask for file {file_id} - Category: '{parsed_category}', Confidence: {parsed_confidence}, Reasoning: '{parsed_reasoning[:100]}...'")
 
                     return {
                         "success": True,

@@ -323,14 +323,43 @@ Always provide detailed reasoning for your decisions and be conservative when in
             )
             
             # Update result with processing results
-            result.categorization_result = processing_result.get("categorization", {})
+            cat_result = processing_result.get("categorization") # Get the full categorization dict
+            logger.info(f"Agent received categorization result for file {file_id}: {cat_result}")
+
+            if cat_result and cat_result.get("success", False):
+                result.categorization_result = {
+                    "document_type": cat_result.get("document_type", "Other"),
+                    "confidence": cat_result.get("confidence", 0.0),
+                    "reasoning": cat_result.get("reasoning", "")
+                }
+                # Ensure confidence_scores dictionary is initialized
+                if result.confidence_scores is None: result.confidence_scores = {}
+                result.confidence_scores["categorization"] = cat_result.get("confidence", 0.0)
+            else:
+                result.categorization_result = {
+                    "document_type": "Error",
+                    "confidence": 0.0,
+                    "reasoning": cat_result.get("error", "Unknown error") if cat_result else "Categorization failed or produced no result."
+                }
+                # Ensure confidence_scores dictionary is initialized
+                if result.confidence_scores is None: result.confidence_scores = {}
+                result.confidence_scores["categorization"] = 0.0
+                # result.success = False # This is implicitly handled as processing_result["success"] would be false
+
             result.metadata_result = processing_result.get("metadata", {})
-            result.confidence_scores = {
-                "overall": processing_result.get("overall_confidence", 0.0),
-                "categorization": processing_result.get("categorization", {}).get("confidence", 0.0),
-                "metadata": {}
-            }
             
+            # Initialize confidence_scores if it's None (e.g. if categorization failed early)
+            if result.confidence_scores is None:
+                result.confidence_scores = {"overall": 0.0, "categorization": 0.0, "metadata": {}}
+            else: # Ensure keys exist even if already initialized
+                result.confidence_scores.setdefault("overall", 0.0)
+                result.confidence_scores.setdefault("categorization", 0.0) # Will be updated if cat_result was successful
+                result.confidence_scores.setdefault("metadata", {})
+
+            # Overall confidence from workflow, or re-calculate if needed (though workflow should provide it)
+            result.confidence_scores["overall"] = processing_result.get("overall_confidence", 0.0)
+
+
             # Extract metadata confidence scores
             if processing_result.get("metadata"):
                 metadata = processing_result["metadata"]
@@ -835,7 +864,7 @@ def create_box_ai_agent_ui():
                                 feedback={"reviewer": "human", "timestamp": datetime.now().isoformat()}
                             )
                             st.success("Document approved!")
-                            st.experimental_rerun()
+                            st.rerun()
                     
                     with col2:
                         if st.button(f"❌ Reject", key=f"reject_{item['file_id']}"):
@@ -845,7 +874,7 @@ def create_box_ai_agent_ui():
                                 feedback={"reviewer": "human", "timestamp": datetime.now().isoformat()}
                             )
                             st.error("Document rejected!")
-                            st.experimental_rerun()
+                            st.rerun()
         else:
             st.success("No documents in human review queue")
     
