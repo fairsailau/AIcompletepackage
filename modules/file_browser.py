@@ -74,7 +74,8 @@ def file_browser():
                 is_selected = any((selected['id'] == file.id for selected in st.session_state.selected_files))
                 col1, col2, col3 = st.columns([0.1, 0.7, 0.2])
                 with col1:
-                    if st.checkbox('', value=is_selected, key=f'select_{file.id}'):
+                    # Use a descriptive label for accessibility, but collapse it for visual layout
+                    if st.checkbox(f"Select file {file.name}", value=is_selected, key=f'select_{file.id}', label_visibility="collapsed"):
                         if not is_selected:
                             toggle_file_selection(file.id, file.name, file_type)
                     elif is_selected:
