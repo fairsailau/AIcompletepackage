@@ -88,9 +88,9 @@ class BoxAITool(BaseTool):
             })
     
     def _run_categorization(self, file_id: str, query: str, headers: Dict[str, str]) -> Dict[str, Any]:
-        """Run document categorization using Box AI Q&A endpoint."""
+        """Run document categorization using Box AI /ai/ask endpoint."""
         try:
-            api_url = 'https://api.box.com/2.0/ai/text_qa' # Changed API URL
+            api_url = 'https://api.box.com/2.0/ai/ask' # Changed API URL to /ai/ask
             
             # Parse categories from the original query parameter or use defaults
             # The 'query' parameter to _run_categorization is the original query from the tool input.
@@ -115,27 +115,22 @@ Category: [selected category name]
 Confidence: [confidence score between 0.0 and 1.0, e.g., 0.75]
 Reasoning: [Your detailed reasoning for the categorization]
 """
-            # Prepare request body for Q&A
+            # Prepare request body for /ai/ask
             request_body = {
-                'items': [{'id': file_id, 'type': 'file'}],
-                'task': {
-                    'type': 'question_answering',
-                    'question': prompt # Use the constructed prompt
-                }
+                'mode': 'question_answering',
+                'prompt': prompt, # 'prompt' is the variable already holding the constructed categorization question
+                'items': [{'type': 'file', 'id': file_id}]
             }
             
             response = requests.post(api_url, headers=headers, json=request_body, timeout=180)
             
             if response.status_code == 200:
                 response_data = response.json()
+                answer_text = response_data.get('answer') # Get answer directly from /ai/ask response
                 
-                if 'entries' in response_data and len(response_data['entries']) > 0:
-                    entry = response_data['entries'][0]
-                    if 'question_answering' in entry and entry['question_answering'].get('answer'):
-                        answer_text = entry['question_answering']['answer']
-                        
-                        # Parse the answer_text
-                        parsed_category = "Other"
+                if answer_text is not None:
+                    # Parse the answer_text (existing logic should be mostly fine)
+                    parsed_category = "Other"
                         parsed_confidence = 0.0
                         parsed_reasoning = "No reasoning provided by AI or parsing failed."
 
@@ -183,24 +178,22 @@ Reasoning: [Your detailed reasoning for the categorization]
                         }
                     else:
                         logger.warning(f"Categorization Q&A for file {file_id} missing 'question_answering' or 'answer' in entry: {entry}")
-                        return {"success": False, "error": "Malformed response from Box AI Q&A (missing answer structure)", "response_data": response_data}
-                else:
-                    logger.warning(f"Categorization Q&A for file {file_id} returned empty 'entries': {response_data}")
-                    return {"success": False, "error": "Malformed response from Box AI Q&A (empty entries)", "response_data": response_data}
+                        return {"success": False, "error": "Malformed response from Box AI /ai/ask (missing answer field)", "response_data": response_data}
+                # No 'entries' structure to check for /ai/ask, direct 'answer' is key
 
             # Handle non-200 error or unexpected response
-            logger.error(f"Box AI categorization (via Q&A) failed for file {file_id}: {response.status_code}, Response: {response.text[:500]}")
+            logger.error(f"Box AI categorization (via /ai/ask) failed for file {file_id}: {response.status_code}, Response: {response.text[:500]}")
             return {
                 "success": False,
-                "error": f"Box AI categorization (via Q&A) failed: Status {response.status_code}",
+                "error": f"Box AI categorization (via /ai/ask) failed: Status {response.status_code}",
                 "response_text": response.text[:500] if response.text else "No response text"
             }
             
         except requests.exceptions.RequestException as req_e:
-            logger.error(f"RequestException during Box AI categorization (via Q&A) for file {file_id}: {str(req_e)}")
+            logger.error(f"RequestException during Box AI categorization (via /ai/ask) for file {file_id}: {str(req_e)}")
             return {"success": False, "error": f"RequestException: {str(req_e)}"}
         except Exception as e:
-            logger.error(f"Error in Box AI categorization (via Q&A) for file {file_id}: {str(e)}")
+            logger.error(f"Error in Box AI categorization (via /ai/ask) for file {file_id}: {str(e)}")
             return {
                 "success": False,
                 "error": str(e)
