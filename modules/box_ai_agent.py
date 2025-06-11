@@ -6,6 +6,7 @@ with intelligent human-in-the-loop escalation based on confidence boundaries.
 """
 
 import streamlit as st
+import pandas as pd
 import logging
 import json
 import os
