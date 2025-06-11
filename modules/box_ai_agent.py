@@ -316,13 +316,20 @@ Always provide detailed reasoning for your decisions and be conservative when in
             field_names = [field.get("name") for field in field_definitions if "name" in field]
             logger.info(f"File {file_id}: Pre-metadata extraction. result.success: {result.success}. Metadata fields to attempt: {field_names if field_names else 'None'}") # Log field_names
 
+            # Extract field names for metadata extraction
+            field_names = [field.get("name") for field in field_definitions if "name" in field]
+            logger.info(f"File {file_id}: Pre-workflow. Metadata fields to attempt: {field_names if field_names else 'None'}")
+
             # Process document using Box AI
             processing_result = self.box_ai_processor.process_document_workflow(
                 file_id=file_id,
                 categories=categories,
                 metadata_fields=field_names
             )
-            logger.info(f"File {file_id}: Agent received processing_result from workflow: {processing_result}") # Log entire processing_result
+            logger.info(f"File {file_id}: Agent received processing_result from workflow: {processing_result}")
+
+            # Local flag based on the tool's own success report
+            tool_execution_successful = processing_result.get("success", False)
 
             # Initialize confidence_scores if it's None
             if result.confidence_scores is None:
@@ -332,9 +339,9 @@ Always provide detailed reasoning for your decisions and be conservative when in
                 result.confidence_scores.setdefault("categorization", 0.0)
                 result.confidence_scores.setdefault("metadata", {})
 
-            # Update result with categorization processing outcome
+            # Handle categorization part
             categorization_details_from_workflow = processing_result.get("categorization", {})
-            if processing_result.get("success", False) and categorization_details_from_workflow.get("document_type") != "Error" and categorization_details_from_workflow.get("success",True): # Check success of cat part
+            if tool_execution_successful and categorization_details_from_workflow.get("document_type") != "Error" and categorization_details_from_workflow.get("success", True if categorization_details_from_workflow else False) :
                 retrieved_doc_type = categorization_details_from_workflow.get("document_type", "Other")
                 retrieved_confidence = categorization_details_from_workflow.get("confidence", 0.0)
                 retrieved_reasoning = categorization_details_from_workflow.get("reasoning", "")
@@ -345,8 +352,9 @@ Always provide detailed reasoning for your decisions and be conservative when in
                     "reasoning": retrieved_reasoning
                 }
                 result.confidence_scores["categorization"] = retrieved_confidence
-                logger.info(f"File {file_id}: Workflow Categorization SUCCEEDED. Type: '{retrieved_doc_type}', Conf: {retrieved_confidence:.2f}")
+                logger.info(f"File {file_id}: Workflow Categorization Part SUCCEEDED. Type: '{retrieved_doc_type}', Conf: {retrieved_confidence:.2f}")
             else:
+                tool_execution_successful = False # Mark as failed if cat part specifically errored or tool indicated failure
                 error_reason = categorization_details_from_workflow.get("reasoning", categorization_details_from_workflow.get("error", processing_result.get("error", "Unknown categorization error in workflow")))
                 result.categorization_result = {
                     "document_type": "Error",
@@ -354,59 +362,81 @@ Always provide detailed reasoning for your decisions and be conservative when in
                     "reasoning": error_reason
                 }
                 result.confidence_scores["categorization"] = 0.0
-                result.success = False # Mark overall processing for this file as failed due to categorization failure
-                logger.warning(f"File {file_id}: Workflow Categorization FAILED or Errored. Reason: {error_reason}")
+                logger.warning(f"File {file_id}: Workflow Categorization Part FAILED or Errored. Reason: {error_reason}")
 
-            # Update result with metadata processing outcome (only if categorization was successful)
-            if result.success:
-                metadata_details_from_workflow = processing_result.get("metadata", {})
-                logger.info(f"File {file_id}: Agent received metadata part of workflow: {metadata_details_from_workflow}")
-                if metadata_details_from_workflow: # Check if metadata_details_from_workflow is not None
+            # Handle metadata part
+            metadata_details_from_workflow = processing_result.get("metadata") # Can be None if not processed
+            if field_names and tool_execution_successful and metadata_details_from_workflow is not None:
+                if "error" in metadata_details_from_workflow:
+                    tool_execution_successful = False
+                    result.metadata_result = {"error": metadata_details_from_workflow["error"]}
+                    logger.warning(f"File {file_id}: Metadata extraction part of workflow reported error: {metadata_details_from_workflow['error']}")
+                else:
                     result.metadata_result = metadata_details_from_workflow
-                    # Extract numeric confidences for metadata
+                    logger.info(f"File {file_id}: Agent received metadata part of workflow: {result.metadata_result}")
                     for key, value in result.metadata_result.items():
                         if key.endswith("_confidence_numeric") and isinstance(value, (int, float)):
-                            field_name = key.replace("_confidence_numeric", "")
-                            result.confidence_scores["metadata"][field_name] = value
-                else:
-                    logger.info(f"File {file_id}: No metadata details found in workflow result or metadata extraction skipped.")
-                    result.metadata_result = {} # Ensure it's an empty dict
-            else: # Categorization failed, so metadata was likely skipped or irrelevant
-                logger.info(f"File {file_id}: Metadata processing skipped due to categorization failure.")
+                            meta_field_name = key.replace("_confidence_numeric", "")
+                            result.confidence_scores["metadata"][meta_field_name] = value
+            elif field_names and tool_execution_successful and metadata_details_from_workflow is None:
+                 logger.info(f"File {file_id}: Metadata extraction returned no data from workflow, though workflow reported success.")
+                 result.metadata_result = {}
+            elif not field_names and tool_execution_successful:
+                logger.info(f"File {file_id}: No metadata fields were requested for extraction.")
                 result.metadata_result = {}
+            elif not tool_execution_successful:
+                 logger.info(f"File {file_id}: Metadata processing skipped due to earlier failure in workflow.")
+                 result.metadata_result = {}
+
 
             # Ensure confidence_scores["metadata"] exists even if empty
             if "metadata" not in result.confidence_scores:
                 result.confidence_scores["metadata"] = {}
 
-            # Overall confidence from workflow
+            # Overall confidence from workflow (or could be re-calculated based on components if desired)
             result.confidence_scores["overall"] = processing_result.get("overall_confidence", 0.0)
 
-            # Check confidence boundaries (only if overall processing was successful so far)
-            confidence_scores_json = "{}" # Default to empty if issues
-            if result.success:
+            # If the tool execution itself failed, set status to ERROR and skip confidence checks
+            if not tool_execution_successful:
+                result.status = ProcessingStatus.ERROR
+                # Prefer more specific error from categorization or metadata if available
+                cat_error = result.categorization_result.get("reasoning", "") if result.categorization_result.get("document_type") == "Error" else ""
+                meta_error = result.metadata_result.get("error", "") if result.metadata_result else ""
+                error_priority = [cat_error, meta_error, "Tool execution failed or sub-task reported error."]
+                result.error_message = next((err for err in error_priority if err), "Tool execution failed")
+                logger.error(f"File {file_id}: Tool execution marked as FAILED. Final error: {result.error_message}")
+            else:
+                # Proceed with confidence boundary checks
                 confidence_scores_json = json.dumps({
                     "categorization_confidence": result.confidence_scores["categorization"],
-                    "metadata_confidences": result.confidence_scores.get("metadata", {}) # Use .get for safety
+                    "metadata_confidences": result.confidence_scores.get("metadata", {})
                 })
-            logger.info(f"File {file_id}: Calling _check_confidence_boundaries with: {confidence_scores_json}")
+                logger.info(f"File {file_id}: Calling _check_confidence_boundaries with: {confidence_scores_json}")
+
+                boundaries_result = json.loads(self._check_confidence_boundaries(confidence_scores_json))
+                action = boundaries_result.get("action", "human_review")
+
+                # Apply action based on confidence
+                if action == "auto_approve":
+                    result.status = ProcessingStatus.AUTO_APPROVED
+                elif action == "human_review":
+                    result.status = ProcessingStatus.HUMAN_REVIEW_REQUIRED
+                    result.escalation_reason = boundaries_result.get("reasoning", "Confidence below auto-approve threshold")
+                    self.human_review_queue.append(file_id)
+                else:  # auto_reject or error from boundary check
+                    result.status = ProcessingStatus.ERROR # Or a more specific status like AUTO_REJECTED
+                    result.error_message = boundaries_result.get("reasoning", "Confidence too low for processing or boundary check error")
+
+            # Check for additional escalation criteria (only if not already an error or human review by confidence)
+            if tool_execution_successful and result.status not in [ProcessingStatus.ERROR, ProcessingStatus.HUMAN_REVIEW_REQUIRED]:
+                if self.boundaries.escalate_on_category_change:
+                    # Placeholder: Implement actual check if original category (if any) vs new category
+                    pass
+                if self.boundaries.escalate_on_field_inconsistency:
+                    # Placeholder: Implement actual check for field inconsistencies
+                    pass
             
-            boundaries_result = json.loads(self._check_confidence_boundaries(confidence_scores_json))
-            action = boundaries_result.get("action", "human_review")
-            
-            # Apply action
-            if action == "auto_approve":
-                result.status = ProcessingStatus.AUTO_APPROVED
-            elif action == "human_review":
-                result.status = ProcessingStatus.HUMAN_REVIEW_REQUIRED
-                result.escalation_reason = "Confidence below auto-approve threshold"
-                self.human_review_queue.append(file_id)
-            else:  # auto_reject or error
-                result.status = ProcessingStatus.ERROR
-                result.error_message = "Confidence too low for processing"
-            
-            # Check for additional escalation criteria
-            if self.boundaries.escalate_on_category_change and result.status != ProcessingStatus.HUMAN_REVIEW_REQUIRED:
+        except Exception as e:
                 # This would check for category changes in a real implementation
                 # For now, we'll just use a placeholder
                 pass
