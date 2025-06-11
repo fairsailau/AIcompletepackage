@@ -8,6 +8,8 @@ for document processing, categorization, and metadata extraction.
 import logging
 import json
 import time
+import re # Added import
+import requests # Moved import to top
 from typing import Dict, Any, List, Optional, Union, Callable, Type
 
 # LangChain imports
@@ -86,71 +88,119 @@ class BoxAITool(BaseTool):
             })
     
     def _run_categorization(self, file_id: str, query: str, headers: Dict[str, str]) -> Dict[str, Any]:
-        """Run document categorization using Box AI."""
+        """Run document categorization using Box AI Q&A endpoint."""
         try:
-            import requests
+            api_url = 'https://api.box.com/2.0/ai/text_qa' # Changed API URL
             
-            # Use Box AI API to categorize document
-            api_url = 'https://api.box.com/2.0/ai/text_classification'
-            
-            # Parse categories from query if provided
-            categories = []
+            # Parse categories from the original query parameter or use defaults
+            # The 'query' parameter to _run_categorization is the original query from the tool input.
+            categories_from_query = []
             if "categories:" in query.lower():
                 categories_text = query.lower().split("categories:")[1].strip()
-                categories = [cat.strip() for cat in categories_text.split(",")]
+                categories_from_query = [cat.strip() for cat in categories_text.split(",")]
             
-            # Default categories if not specified
-            if not categories:
-                categories = [
-                    "Sales Contract",
-                    "Invoices",
-                    "Tax",
-                    "Financial Report",
-                    "Employment Contract",
-                    "PII",
-                    "Other"
-                ]
-            
-            # Prepare request body
+            if not categories_from_query:
+                categories_from_query = [
+                    "Sales Contract", "Invoice", "Tax Document", "Financial Report",
+                    "Employment Contract", "PII Document", "Other"
+                ] # Simplified default list for the prompt
+
+            # Construct the prompt for the Q&A endpoint
+            categories_list_str = "\n".join([f"- {cat_name}" for cat_name in categories_from_query])
+            prompt = f"""Please analyze this document and categorize it into one of the following categories:
+{categories_list_str}
+
+Respond ONLY in the following format (exactly three lines):
+Category: [selected category name]
+Confidence: [confidence score between 0.0 and 1.0, e.g., 0.75]
+Reasoning: [Your detailed reasoning for the categorization]
+"""
+            # Prepare request body for Q&A
             request_body = {
                 'items': [{'id': file_id, 'type': 'file'}],
                 'task': {
-                    'type': 'classification',
-                    'categories': categories
+                    'type': 'question_answering',
+                    'question': prompt # Use the constructed prompt
                 }
             }
             
-            # Make API request
             response = requests.post(api_url, headers=headers, json=request_body, timeout=180)
             
             if response.status_code == 200:
                 response_data = response.json()
                 
-                # Extract categorization result
                 if 'entries' in response_data and len(response_data['entries']) > 0:
                     entry = response_data['entries'][0]
-                    if 'classification' in entry:
-                        classification = entry['classification']
+                    if 'question_answering' in entry and entry['question_answering'].get('answer'):
+                        answer_text = entry['question_answering']['answer']
                         
-                        # Format result
-                        result = {
+                        # Parse the answer_text
+                        parsed_category = "Other"
+                        parsed_confidence = 0.0
+                        parsed_reasoning = "No reasoning provided by AI or parsing failed."
+
+                        cat_match = re.search(r"Category: (.*)", answer_text)
+                        if cat_match:
+                            parsed_category = cat_match.group(1).strip()
+
+                        conf_match = re.search(r"Confidence: ([\d.]+)", answer_text)
+                        if conf_match:
+                            try:
+                                parsed_confidence = float(conf_match.group(1).strip())
+                            except ValueError:
+                                logger.warning(f"Could not parse confidence from AI response: {conf_match.group(1)} for file {file_id}")
+                                parsed_confidence = 0.1 # Default to low if parsing fails
+
+                        # Try to get reasoning, ensuring it's not part of Category or Confidence lines
+                        reasoning_lines = []
+                        for line in answer_text.split('\n'):
+                            if line.startswith("Reasoning:"):
+                                reasoning_lines.append(line.replace("Reasoning:", "").strip())
+                            elif not line.startswith("Category:") and not line.startswith("Confidence:"):
+                                reasoning_lines.append(line.strip())
+
+                        if reasoning_lines:
+                            parsed_reasoning = "\n".join(reasoning_lines).strip()
+                        elif cat_match and conf_match : # If only cat and conf found, but no explicit Reasoning: line
+                             # Check if there's text after the confidence line
+                            answer_after_conf = answer_text.split(conf_match.group(0),1)[-1].strip()
+                            if answer_after_conf:
+                                parsed_reasoning = answer_after_conf
+
+                        # Ensure the parsed category is one of the requested categories, otherwise set to "Other"
+                        if parsed_category not in categories_from_query and "Other" in categories_from_query:
+                            logger.warning(f"AI returned category '{parsed_category}' not in requested list for file {file_id}. Defaulting to 'Other'.")
+                            parsed_category = "Other"
+                        elif parsed_category not in categories_from_query:
+                             logger.warning(f"AI returned category '{parsed_category}' not in requested list for file {file_id} and 'Other' not available. Keeping AI category.")
+
+
+                        return {
                             "success": True,
-                            "document_type": classification.get('category', 'Other'),
-                            "confidence": classification.get('confidence', 0.0),
-                            "reasoning": f"Box AI classified this document as {classification.get('category', 'Other')} with {classification.get('confidence', 0.0)} confidence."
+                            "document_type": parsed_category,
+                            "confidence": parsed_confidence,
+                            "reasoning": parsed_reasoning
                         }
-                        
-                        return result
-            
-            # Handle error or unexpected response
+                    else:
+                        logger.warning(f"Categorization Q&A for file {file_id} missing 'question_answering' or 'answer' in entry: {entry}")
+                        return {"success": False, "error": "Malformed response from Box AI Q&A (missing answer structure)", "response_data": response_data}
+                else:
+                    logger.warning(f"Categorization Q&A for file {file_id} returned empty 'entries': {response_data}")
+                    return {"success": False, "error": "Malformed response from Box AI Q&A (empty entries)", "response_data": response_data}
+
+            # Handle non-200 error or unexpected response
+            logger.error(f"Box AI categorization (via Q&A) failed for file {file_id}: {response.status_code}, Response: {response.text[:500]}")
             return {
                 "success": False,
-                "error": f"Box AI categorization failed: {response.status_code}",
-                "response": response.text if response.text else "No response"
+                "error": f"Box AI categorization (via Q&A) failed: Status {response.status_code}",
+                "response_text": response.text[:500] if response.text else "No response text"
             }
             
+        except requests.exceptions.RequestException as req_e:
+            logger.error(f"RequestException during Box AI categorization (via Q&A) for file {file_id}: {str(req_e)}")
+            return {"success": False, "error": f"RequestException: {str(req_e)}"}
         except Exception as e:
-            logger.error(f"Error in Box AI categorization: {str(e)}")
+            logger.error(f"Error in Box AI categorization (via Q&A) for file {file_id}: {str(e)}")
             return {
                 "success": False,
                 "error": str(e)
@@ -159,8 +209,6 @@ class BoxAITool(BaseTool):
     def _run_metadata_extraction(self, file_id: str, query: str, headers: Dict[str, str]) -> Dict[str, Any]:
         """Run metadata extraction using Box AI."""
         try:
-            import requests
-            
             # Use Box AI API to extract metadata
             api_url = 'https://api.box.com/2.0/ai/text_extraction'
             
@@ -237,8 +285,6 @@ class BoxAITool(BaseTool):
     def _run_general_query(self, file_id: str, query: str, headers: Dict[str, str]) -> Dict[str, Any]:
         """Run general query using Box AI."""
         try:
-            import requests
-            
             # Use Box AI API for general query
             api_url = 'https://api.box.com/2.0/ai/text_qa'
             
@@ -318,10 +364,15 @@ class BoxAIDocumentProcessor:
         Returns:
             Categorization result with confidence
         """
-        # Prepare query
-        query = "Categorize this document"
+        # Prepare query for BoxAITool's _run_categorization method
         if categories:
-            query += f" into one of these categories: {', '.join(categories)}"
+            # Format so that _run_categorization can parse it via "categories:"
+            query = f"categories: {', '.join(categories)}"
+        else:
+            # If no categories are provided, _run_categorization will use its defaults.
+            # Sending a simple query string is fine as _run_categorization's
+            # category parsing is conditional on "categories:" being present.
+            query = "Categorize this document."
         
         # Run query
         result_json = self.box_ai_tool._run(
