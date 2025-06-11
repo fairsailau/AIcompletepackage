@@ -637,59 +637,93 @@ def create_box_ai_agent_ui():
         else:
             st.warning("Document categories not initialized in session state. Please visit 'Document Categorization' page first.")
             
-        categories_to_pass = configured_categories
+        # categories_to_pass = configured_categories # This will be determined inside the button click
 
+        # Display block for Metadata Fields (remains outside button click for UI update on render)
         st.subheader("Metadata Fields (from main 'Metadata Configuration')")
-        metadata_config = st.session_state.get("metadata_config", {})
-        field_definitions_to_pass = [] # Initialize
+        # Temp variables for display only
+        display_metadata_config = st.session_state.get("metadata_config", {})
+        display_field_definitions = []
 
-        if metadata_config.get("use_template") and metadata_config.get("template_id"):
-            template_id = metadata_config["template_id"]
-            st.info(f"Agent will use fields from the currently selected template: **{template_id}** (defined in 'Metadata Configuration').")
-
-            # Attempt to get fields from the template
+        if display_metadata_config.get("use_template") and display_metadata_config.get("template_id"):
+            display_template_id = display_metadata_config["template_id"]
+            st.info(f"Agent will use fields from the currently selected template: **{display_template_id}** (defined in 'Metadata Configuration').")
             try:
-                # Parse template_id to scope and template_key
-                if template_id.startswith('enterprise_'):
-                    parts = template_id.split('_', 2)
+                if display_template_id.startswith('enterprise_'):
+                    parts = display_template_id.split('_', 2)
                     scope = 'enterprise'
-                    template_key = parts[2] if len(parts) >= 3 else template_id
+                    template_key = parts[2] if len(parts) >= 3 else display_template_id
                 else:
                     scope = 'enterprise'
-                    template_key = template_id
-                
+                    template_key = display_template_id
                 if "client" in st.session_state and st.session_state.client:
-                    retrieved_fields = get_fields_for_ai_from_template(scope, template_key)
-                    if retrieved_fields:
-                        field_definitions_to_pass = retrieved_fields
+                    display_field_definitions = get_fields_for_ai_from_template(scope, template_key)
+                    if display_field_definitions:
                         with st.expander("View fields from selected template", expanded=False):
-                            for field_def in field_definitions_to_pass:
+                            for field_def in display_field_definitions:
                                 st.markdown(f"- **{field_def.get('displayName', field_def.get('key'))}** (Type: {field_def.get('type')})")
                     else:
-                        st.error(f"Could not retrieve fields for template '{template_id}'. Agent will proceed without specific fields for extraction.")
-                else:
-                    st.error("Box client not available. Cannot retrieve template fields. Agent will proceed without specific fields.")
+                        st.error(f"Display: Could not retrieve fields for template '{display_template_id}'.")
             except Exception as e:
-                st.error(f"Error retrieving fields for template '{template_id}': {e}")
-                logger.error(f"Error in agent UI getting template fields for {template_id}: {e}")
-
-        elif metadata_config.get("extraction_method") == "freeform":
-            st.info("Agent will operate in 'freeform' extraction mode based on main 'Metadata Configuration'. No specific template fields will be targeted.")
-            # field_definitions_to_pass remains []
-        
+                st.error(f"Display: Error retrieving fields for template '{display_template_id}': {e}")
+        elif display_metadata_config.get("extraction_method") == "freeform":
+            st.info("Agent will operate in 'freeform' extraction mode based on main 'Metadata Configuration'. No specific template fields will be targeted for display here.")
         else:
-            st.warning("No metadata template selected in 'Metadata Configuration', and not set to 'freeform'. Agent will primarily focus on categorization and may not extract specific metadata fields.")
-            # field_definitions_to_pass remains []
+            st.warning("Display: No metadata template selected in 'Metadata Configuration', and not set to 'freeform'.")
 
         # Start processing
         if st.button("🚀 Start Autonomous Processing", type="primary"):
             if not files_to_process:
                 st.error("No files selected for processing")
-            # Note: We allow processing even if field_definitions_to_pass is empty,
-            # as the agent might still perform categorization or very basic freeform extraction.
-            # elif not field_definitions_to_pass:
-            #     st.error("No field definitions derived from configuration.")
             else:
+                # --- Determine categories_to_pass START ---
+                categories_to_pass = [] # Default inside button scope
+                if "document_types" in st.session_state and st.session_state.document_types:
+                    categories_to_pass = [dtype["name"] for dtype in st.session_state.document_types]
+                    if not categories_to_pass:
+                        st.warning("Agent: No document categories found in main configuration. Categorization might be ineffective.")
+                else:
+                    st.warning("Agent: Document categories not initialized. Categorization might be ineffective.")
+                # --- Determine categories_to_pass END ---
+
+                # --- Determine field_definitions_to_pass START ---
+                metadata_config_runtime = st.session_state.get("metadata_config", {})
+                field_definitions_to_pass = []
+
+                if metadata_config_runtime.get("use_template") and metadata_config_runtime.get("template_id"):
+                    template_id_runtime = metadata_config_runtime["template_id"]
+                    logger.info(f"Agent: Attempting to use template: {template_id_runtime}")
+                    try:
+                        if template_id_runtime.startswith('enterprise_'):
+                            parts = template_id_runtime.split('_', 2)
+                            scope_runtime = 'enterprise'
+                            template_key_runtime = parts[2] if len(parts) >= 3 else template_id_runtime
+                        else:
+                            scope_runtime = 'enterprise'
+                            template_key_runtime = template_id_runtime
+
+                        if "client" in st.session_state and st.session_state.client:
+                            retrieved_fields_runtime = get_fields_for_ai_from_template(scope_runtime, template_key_runtime)
+                            if retrieved_fields_runtime:
+                                field_definitions_to_pass = retrieved_fields_runtime
+                                logger.info(f"Agent: Successfully retrieved {len(field_definitions_to_pass)} fields for template {template_id_runtime}.")
+                            else:
+                                st.error(f"Agent: Could not retrieve fields for template '{template_id_runtime}'. Metadata extraction will be skipped or limited.")
+                                logger.error(f"Agent: Could not retrieve fields for template '{template_id_runtime}'.")
+                        else:
+                            st.error("Agent: Box client not available. Cannot retrieve template fields.")
+                            logger.error("Agent: Box client not available for get_fields_for_ai_from_template.")
+                    except Exception as e_runtime:
+                        st.error(f"Agent: Error retrieving fields for template '{template_id_runtime}': {e_runtime}")
+                        logger.error(f"Agent: Error retrieving fields for template '{template_id_runtime}': {e_runtime}")
+
+                elif metadata_config_runtime.get("extraction_method") == "freeform":
+                    logger.info("Agent: Using 'freeform' extraction mode (no specific fields from template).")
+                else:
+                    logger.warning("Agent: No template selected and not 'freeform'. Metadata extraction will be limited.")
+                # --- Determine field_definitions_to_pass END ---
+
+                logger.info(f"Starting agent processing. Files: {len(files_to_process)}. Categories: {categories_to_pass}, Field Definitions Count: {len(field_definitions_to_pass)}")
                 # Create progress indicators
                 progress_bar = st.progress(0)
                 status_text = st.empty()
