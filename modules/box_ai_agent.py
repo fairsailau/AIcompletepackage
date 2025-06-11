@@ -31,6 +31,7 @@ from modules.box_ai_tool import (
     BoxAIDocumentProcessor,
     create_box_ai_langchain_tools
 )
+from modules.processing import get_fields_for_ai_from_template # Added import
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -558,117 +559,72 @@ def create_box_ai_agent_ui():
                     st.success(f"Found {len(files_to_process)} files in folder")
                 except Exception as e:
                     st.error(f"Error accessing folder: {str(e)}")
-        
-        # Category selection
-        st.subheader("Document Categories")
-        
-        default_categories = [
-            "Sales Contract",
-            "Invoices",
-            "Tax",
-            "Financial Report",
-            "Employment Contract",
-            "PII",
-            "Other"
-        ]
-        
-        use_custom_categories = st.checkbox("Use Custom Categories", value=False)
-        
-        if use_custom_categories:
-            custom_categories = st.text_area(
-                "Enter Categories (one per line)",
-                value="\n".join(default_categories)
-            )
-            categories = [cat.strip() for cat in custom_categories.split("\n") if cat.strip()]
+
+        # Display Document Categories from main configuration
+        st.subheader("Document Categories (from main configuration)")
+        configured_categories = []
+        if "document_types" in st.session_state and st.session_state.document_types:
+            configured_categories = [dtype["name"] for dtype in st.session_state.document_types]
+            with st.expander("View categories the agent will use", expanded=False):
+                for cat_name in configured_categories:
+                    st.markdown(f"- {cat_name}")
+            if not configured_categories:
+                st.warning("No document categories found in the main configuration (Document Categorization > Settings). Please configure them first.")
         else:
-            categories = default_categories
-        
-        # Field definition selection
-        st.subheader("Field Definitions")
-        
-        # Option to load predefined field sets
-        predefined_sets = {
-            "Invoice": [
-                {"name": "invoice_number", "type": "string", "description": "Invoice identifier"},
-                {"name": "invoice_date", "type": "date", "description": "Date invoice was issued"},
-                {"name": "due_date", "type": "date", "description": "Date payment is due"},
-                {"name": "vendor_name", "type": "string", "description": "Name of vendor"},
-                {"name": "vendor_address", "type": "string", "description": "Address of vendor"},
-                {"name": "subtotal", "type": "number", "description": "Subtotal amount before tax"},
-                {"name": "tax_amount", "type": "number", "description": "Tax amount"},
-                {"name": "total_amount", "type": "number", "description": "Total invoice amount"}
-            ],
-            "Contract": [
-                {"name": "contract_id", "type": "string", "description": "Contract identifier"},
-                {"name": "effective_date", "type": "date", "description": "Date contract becomes effective"},
-                {"name": "expiration_date", "type": "date", "description": "Date contract expires"},
-                {"name": "party_1", "type": "string", "description": "First party name"},
-                {"name": "party_2", "type": "string", "description": "Second party name"},
-                {"name": "contract_value", "type": "number", "description": "Total contract value"}
-            ],
-            "Custom": []
-        }
-        
-        selected_set = st.selectbox(
-            "Field Set",
-            list(predefined_sets.keys()),
-            help="Select a predefined set of fields or create a custom set"
-        )
-        
-        if selected_set == "Custom":
-            # Custom field definition
-            field_definitions = []
+            st.warning("Document categories not initialized in session state. Please visit 'Document Categorization' page first.")
             
-            # Add fields dynamically
-            num_fields = st.number_input("Number of Fields", min_value=1, max_value=20, value=3)
-            
-            for i in range(num_fields):
-                col1, col2, col3 = st.columns([2, 1, 3])
+        categories_to_pass = configured_categories
+
+        st.subheader("Metadata Fields (from main 'Metadata Configuration')")
+        metadata_config = st.session_state.get("metadata_config", {})
+        field_definitions_to_pass = [] # Initialize
+
+        if metadata_config.get("use_template") and metadata_config.get("template_id"):
+            template_id = metadata_config["template_id"]
+            st.info(f"Agent will use fields from the currently selected template: **{template_id}** (defined in 'Metadata Configuration').")
+
+            # Attempt to get fields from the template
+            try:
+                # Parse template_id to scope and template_key
+                if template_id.startswith('enterprise_'):
+                    parts = template_id.split('_', 2)
+                    scope = 'enterprise'
+                    template_key = parts[2] if len(parts) >= 3 else template_id
+                else:
+                    scope = 'enterprise'
+                    template_key = template_id
                 
-                with col1:
-                    field_name = st.text_input(f"Field {i+1} Name", key=f"field_name_{i}")
-                
-                with col2:
-                    field_type = st.selectbox(
-                        f"Field {i+1} Type",
-                        ["string", "date", "number", "enum"],
-                        key=f"field_type_{i}"
-                    )
-                
-                with col3:
-                    field_desc = st.text_input(f"Field {i+1} Description", key=f"field_desc_{i}")
-                
-                if field_name:
-                    field_def = {
-                        "name": field_name,
-                        "type": field_type,
-                        "description": field_desc
-                    }
-                    
-                    # Add options for enum type
-                    if field_type == "enum":
-                        options = st.text_input(
-                            f"Options for {field_name} (comma-separated)",
-                            key=f"field_options_{i}"
-                        )
-                        if options:
-                            field_def["options"] = [opt.strip() for opt in options.split(",")]
-                    
-                    field_definitions.append(field_def)
+                if "client" in st.session_state and st.session_state.client:
+                    retrieved_fields = get_fields_for_ai_from_template(scope, template_key)
+                    if retrieved_fields:
+                        field_definitions_to_pass = retrieved_fields
+                        with st.expander("View fields from selected template", expanded=False):
+                            for field_def in field_definitions_to_pass:
+                                st.markdown(f"- **{field_def.get('displayName', field_def.get('key'))}** (Type: {field_def.get('type')})")
+                    else:
+                        st.error(f"Could not retrieve fields for template '{template_id}'. Agent will proceed without specific fields for extraction.")
+                else:
+                    st.error("Box client not available. Cannot retrieve template fields. Agent will proceed without specific fields.")
+            except Exception as e:
+                st.error(f"Error retrieving fields for template '{template_id}': {e}")
+                logger.error(f"Error in agent UI getting template fields for {template_id}: {e}")
+
+        elif metadata_config.get("extraction_method") == "freeform":
+            st.info("Agent will operate in 'freeform' extraction mode based on main 'Metadata Configuration'. No specific template fields will be targeted.")
+            # field_definitions_to_pass remains []
+        
         else:
-            # Use predefined field set
-            field_definitions = predefined_sets[selected_set]
-            
-            # Display the selected fields
-            for field in field_definitions:
-                st.markdown(f"**{field['name']}** ({field['type']}): {field['description']}")
-        
+            st.warning("No metadata template selected in 'Metadata Configuration', and not set to 'freeform'. Agent will primarily focus on categorization and may not extract specific metadata fields.")
+            # field_definitions_to_pass remains []
+
         # Start processing
         if st.button("🚀 Start Autonomous Processing", type="primary"):
             if not files_to_process:
                 st.error("No files selected for processing")
-            elif not field_definitions:
-                st.error("No field definitions provided")
+            # Note: We allow processing even if field_definitions_to_pass is empty,
+            # as the agent might still perform categorization or very basic freeform extraction.
+            # elif not field_definitions_to_pass:
+            #     st.error("No field definitions derived from configuration.")
             else:
                 # Create progress indicators
                 progress_bar = st.progress(0)
@@ -678,8 +634,8 @@ def create_box_ai_agent_ui():
                 with st.spinner("Agent is processing documents with Box AI..."):
                     results = agent.process_batch(
                         file_ids=files_to_process,
-                        field_definitions=field_definitions,
-                        categories=categories
+                        field_definitions=field_definitions_to_pass,
+                        categories=categories_to_pass
                     )
                 
                 progress_bar.progress(1.0)
