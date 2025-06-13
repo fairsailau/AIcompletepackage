@@ -5,7 +5,7 @@ import json # For utility if needed
 # Import from other project modules
 from modules.automated_template_mapping import suggest_templates_for_category, record_historical_selection, load_json_data, save_json_data, CONFIRMED_MAPPINGS_FILE, DEFAULT_FACTOR_WEIGHTS
 from modules.processing import get_fields_for_ai_from_template # To get fields once template is chosen
-from modules.box_ai_agent import ProcessingStatus # To update document status
+from modules.agent_types import ProcessingStatus # To update document status
 
 logger = logging.getLogger(__name__)
 

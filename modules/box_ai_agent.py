@@ -33,55 +33,11 @@ from modules.box_ai_tool import (
 )
 from modules.processing import get_fields_for_ai_from_template # Added import
 from modules.box_ai_agent_template_integration import integrate_agent_template_selection_with_box_ai_agent, display_agent_template_selection_ui
+from modules.agent_types import ProcessingStatus, ProcessingBoundaries, DocumentProcessingResult # Added import
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
-
-class ProcessingStatus(Enum):
-    """Status of document processing."""
-    PENDING = "pending"
-    PROCESSING = "processing"
-    AUTO_APPROVED = "auto_approved"
-    HUMAN_REVIEW_REQUIRED = "human_review_required"
-    HUMAN_APPROVED = "human_approved"
-    HUMAN_REJECTED = "human_rejected"
-    ERROR = "error"
-    COMPLETED = "completed"
-
-@dataclass
-class ProcessingBoundaries:
-    """Configuration for processing boundaries and thresholds."""
-    # Confidence thresholds
-    auto_approve_threshold: float = 0.85
-    human_review_threshold: float = 0.6
-    auto_reject_threshold: float = 0.3
-    
-    # Processing limits
-    max_files_per_batch: int = 50
-    max_processing_time_minutes: int = 30
-    
-    # Escalation criteria
-    escalate_on_category_change: bool = True
-    escalate_on_low_metadata_confidence: bool = True
-    escalate_on_field_inconsistency: bool = True
-    
-    # Human review timeout
-    human_review_timeout_hours: int = 24
-
-@dataclass
-class DocumentProcessingResult:
-    """Result of document processing by the agent."""
-    file_id: str
-    file_name: str
-    status: ProcessingStatus
-    categorization_result: Optional[Dict[str, Any]] = None
-    metadata_result: Optional[Dict[str, Any]] = None
-    confidence_scores: Optional[Dict[str, float]] = None
-    escalation_reason: Optional[str] = None
-    processing_time: Optional[float] = None
-    error_message: Optional[str] = None
-    human_feedback: Optional[Dict[str, Any]] = None
 
 class BoxAIDocumentProcessingAgent:
     """LangChain agent for autonomous document processing using Box AI."""
