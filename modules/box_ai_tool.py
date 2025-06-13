@@ -215,11 +215,12 @@ Reasoning: [Your detailed reasoning for the categorization]
             # Prepare request body for /ai/text_gen
             request_body = {
                 "items": [{"id": file_id, "type": "file"}],
+                "prompt": extraction_prompt, # Added top-level prompt
                 "ai_agent": {
                     "type": "ai_agent_text_gen",
                     "basic_text": {
                         "model": ai_model,
-                        "prompt": extraction_prompt,
+                        "prompt": extraction_prompt, # Kept nested prompt for consistency
                         "system_message": "You are an AI assistant that extracts information from documents and returns it as a JSON object. For each field, provide a value. If confidence scoring is requested in the prompt, include it."
                     }
                 }
