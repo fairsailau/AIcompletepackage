@@ -32,6 +32,7 @@ from modules.box_ai_tool import (
     create_box_ai_langchain_tools
 )
 from modules.processing import get_fields_for_ai_from_template # Added import
+from modules.box_ai_agent_template_integration import integrate_agent_template_selection_with_box_ai_agent, display_agent_template_selection_ui
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -593,21 +594,44 @@ def create_box_ai_agent_ui():
     st.title("🤖 Box AI Document Processing Agent")
     
     # Initialize agent if not exists
-    if "box_ai_processing_agent" not in st.session_state:
+    if "box_ai_processing_agent" not in st.session_state or st.session_state.box_ai_processing_agent is None:
+        logger.info("Box AI Processing Agent not found or is None in session state. Initializing...")
         # Default boundaries
         boundaries = ProcessingBoundaries()
         
         # Create agent
-        st.session_state.box_ai_processing_agent = BoxAIDocumentProcessingAgent(
+        agent_instance = BoxAIDocumentProcessingAgent( # Create instance first
             client=st.session_state.client,
             boundaries=boundaries,
-            enable_human_loop=True
+            enable_human_loop=True,
+            # openai_api_key=st.secrets.get("OPENAI_API_KEY") # Example if using OpenAI directly
         )
-    
-    agent = st.session_state.box_ai_processing_agent
+        st.session_state.box_ai_processing_agent = agent_instance # Assign to session state
+        logger.info("Box AI Processing Agent initialized and stored in session state.")
+
+        # Integrate template selection UI components
+        if hasattr(st.session_state, "box_ai_processing_agent") and st.session_state.box_ai_processing_agent is not None:
+            logger.info("Integrating agent template selection UI components with newly created Box AI Processing Agent.")
+            integrate_agent_template_selection_with_box_ai_agent(st.session_state.box_ai_processing_agent)
+        else:
+            logger.error("CRITICAL: Box AI Processing Agent not found in session state immediately after initialization for template integration.")
+
+    else:
+        logger.info("Box AI Processing Agent already exists in session state.")
+        # Optionally, re-integrate if necessary or if settings could change, though typically done once.
+        # if not hasattr(st.session_state.box_ai_processing_agent, '_template_integration_complete'): # Example flag
+        #     logger.info("Re-integrating template selection on existing agent (if needed).")
+        #     integrate_agent_template_selection_with_box_ai_agent(st.session_state.box_ai_processing_agent)
+
+
+    agent = st.session_state.box_ai_processing_agent # This should now always be populated if logic above is correct
+    if agent is None:
+        st.error("Failed to initialize or retrieve the Box AI Processing Agent. Please check logs.")
+        logger.error("Agent is None before creating tabs. Aborting UI setup for agent.")
+        return # Stop further rendering if agent is None
     
     # Create tabs
-    tab1, tab2, tab3, tab4 = st.tabs(["Agent Control", "Processing Results", "Human Review", "Settings"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Agent Control", "Processing Results", "Template Selection", "Human Review", "Settings"])
     
     with tab1:
         st.header("Agent Control Panel")
@@ -912,8 +936,12 @@ def create_box_ai_agent_ui():
                         st.markdown(f"**Comments:** {result.human_feedback['comments']}")
         else:
             st.info("No processing results yet. Start processing in the Agent Control tab.")
+
+    with tab3: # Corresponds to "Template Selection"
+        st.header("Template Selection and Configuration")
+        display_agent_template_selection_ui()
     
-    with tab3:
+    with tab4: # Corresponds to "Human Review"
         st.header("Human Review Queue")
         
         review_items = agent.get_human_review_queue()
@@ -968,7 +996,7 @@ def create_box_ai_agent_ui():
         else:
             st.success("No documents in human review queue")
     
-    with tab4:
+    with tab5: # Corresponds to "Settings"
         st.header("Agent Settings")
         
         # Processing boundaries

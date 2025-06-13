@@ -2,6 +2,7 @@ import streamlit as st
 import logging
 import json
 from typing import Dict, Any, List, Optional
+from modules.automated_template_mapping import display_automated_mapping_ui # Added import
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,11 @@ def metadata_config():
         if st.button('Go to Document Categorization', key='go_to_doc_cat_button'):
             st.session_state.current_page = 'Document Categorization'
             st.rerun()
+
+    st.subheader("Automated Template Tools")
+    with st.expander("Automated Template Mapping", expanded=False):
+        display_automated_mapping_ui()
+
     st.subheader('Extraction Method')
     if 'extraction_method' not in st.session_state.metadata_config:
         st.session_state.metadata_config['extraction_method'] = 'freeform'

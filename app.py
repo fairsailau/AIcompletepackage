@@ -28,6 +28,8 @@ sys.path.append(str(Path(__file__).parent.parent))
 from modules.authentication import authenticate
 from modules.file_browser import file_browser
 from modules.box_ai_streamlit_integration import update_app_for_box_ai_agent, box_ai_agent_workflow_tab
+from modules.automated_template_mapping import display_automated_mapping_ui
+from modules.box_ai_agent_template_integration import integrate_agent_template_selection_with_box_ai_agent, display_agent_template_selection_ui
 from modules.metadata_config import metadata_config
 from modules.processing import process_files
 from modules.results_viewer import view_results
