@@ -20,6 +20,7 @@ from modules.box_ai_agent import (
     DocumentProcessingResult,
     create_box_ai_agent_ui
 )
+from modules.box_ai_agent_template_integration import integrate_agent_template_selection_with_box_ai_agent
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +84,14 @@ def integrate_box_ai_agent_with_app():
             enable_human_loop=True,
             openai_api_key=openai_api_key # Pass the loaded key
         )
+        logger.info("BOX_AI_STREAMLIT_INTEGRATION: BoxAIDocumentProcessingAgent initialized.")
+
+        # Integrate template selection logic
+        if st.session_state.get('box_ai_processing_agent'): # Check if agent exists
+            integrate_agent_template_selection_with_box_ai_agent(st.session_state.box_ai_processing_agent)
+            logger.info("BOX_AI_STREAMLIT_INTEGRATION: Called integrate_agent_template_selection_with_box_ai_agent.")
+        else:
+            logger.error("BOX_AI_STREAMLIT_INTEGRATION: Box AI Processing Agent not found in session state immediately after creation. Template selection logic NOT integrated.")
     
     # Update tabs if needed
     if 'tabs' in st.session_state:

@@ -32,7 +32,7 @@ from modules.box_ai_tool import (
     create_box_ai_langchain_tools
 )
 from modules.processing import get_fields_for_ai_from_template # Added import
-from modules.box_ai_agent_template_integration import integrate_agent_template_selection_with_box_ai_agent, display_agent_template_selection_ui
+from modules.box_ai_agent_template_integration import integrate_agent_template_selection_with_box_ai_agent, display_agent_template_selection_ui, get_agent_template_config
 from modules.agent_types import ProcessingStatus, ProcessingBoundaries, DocumentProcessingResult # Added import
 
 # Configure logging
@@ -585,6 +585,42 @@ def create_box_ai_agent_ui():
         st.error("Failed to initialize or retrieve the Box AI Processing Agent. Please check logs.")
         logger.error("Agent is None before creating tabs. Aborting UI setup for agent.")
         return # Stop further rendering if agent is None
+
+    # --- Debug Information Expander ---
+    with st.expander("Debug Information (Agent Integration Status)", expanded=False):
+        st.subheader("Agent Initialization & Integration")
+        if 'box_ai_processing_agent' in st.session_state and st.session_state.box_ai_processing_agent:
+            agent_debug = st.session_state.box_ai_processing_agent # Renamed to avoid conflict with outer scope 'agent'
+            st.write("✅ Agent object found in `st.session_state.box_ai_processing_agent`.")
+
+            is_enhanced = False
+            # Check based on attribute set by integration function (preferred)
+            if hasattr(agent_debug, '_template_integration_complete') and agent_debug._template_integration_complete:
+                is_enhanced = True
+            # Fallback to name check if attribute not present (less reliable)
+            elif hasattr(agent_debug.process_document, '__name__') and 'enhanced_process_document' in agent_debug.process_document.__name__:
+                is_enhanced = True
+            elif hasattr(agent_debug.process_document, '__qualname__') and 'enhanced_process_document' in agent_debug.process_document.__qualname__:
+                is_enhanced = True
+            elif hasattr(agent_debug.process_document, '__wrapped__'): # Check for functools.wraps
+                is_enhanced = True
+
+            if is_enhanced:
+                st.write("✅ Agent's `process_document` method appears to be **enhanced** (template selection logic likely integrated).")
+            else:
+                st.warning("⚠️ Agent's `process_document` method does **NOT** appear to be enhanced. Template selection logic might not be active.")
+                st.caption(f"Details: Method name: `{getattr(agent_debug.process_document, '__name__', 'N/A')}`, Qualname: `{getattr(agent_debug.process_document, '__qualname__', 'N/A')}`, Type: `{type(agent_debug.process_document)}`")
+
+            st.subheader("Template Integration Configuration")
+            try:
+                config = get_agent_template_config()
+                st.write(f"- Auto-select threshold: `{config.get('auto_select_threshold', 'N/A')}`")
+                st.write(f"- Items in human review queue for templates: `{len(config.get('human_review_template_queue', {}))}`")
+            except Exception as e_cfg:
+                st.error(f"Could not retrieve agent template config via get_agent_template_config(): {e_cfg}")
+        else:
+            st.error("❌ Agent object (`box_ai_processing_agent`) not found in `st.session_state`.")
+    # --- End Debug Information Expander ---
     
     # Create tabs
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["Agent Control", "Processing Results", "Template Selection", "Human Review", "Settings"])
