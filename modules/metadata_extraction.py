@@ -218,7 +218,51 @@ def get_extraction_functions() -> Dict[str, Any]:
                 logger.warning(f"Neither 'answer' nor 'entries' field found in the structured API response (file_id: {file_id}): {response_data}")
                 processed_response['_error'] = "Neither 'answer' nor 'entries' field in API response"
                 if '_confidence_processing_failed' not in processed_response: processed_response['_confidence_processing_failed'] = True
-            return processed_response
+
+            # Ensure all expected fields are present in the final response
+            final_response = {}
+
+            # Preserve meta-information
+            for key, value in processed_response.items():
+                if key.startswith('_'):
+                    final_response[key] = value
+
+            # Get expected field keys
+            all_expected_field_keys = []
+            if fields: # fields is the parameter passed to extract_structured_metadata
+                all_expected_field_keys = [field['key'] for field in fields if 'key' in field]
+
+            logger.info(f"Expected field keys for file_id {file_id}: {all_expected_field_keys}")
+            logger.info(f"Processed response before ensuring all fields (file_id {file_id}): {processed_response}")
+
+
+            for expected_key in all_expected_field_keys:
+                if expected_key in processed_response:
+                    final_response[expected_key] = processed_response[expected_key]
+                    # Copy associated confidence, defaulting if somehow missing
+                    associated_confidence_key = f"{expected_key}_confidence"
+                    if associated_confidence_key in processed_response:
+                        final_response[associated_confidence_key] = processed_response[associated_confidence_key]
+                    else:
+                        logger.warning(f"Field '{expected_key}_confidence' (file_id: {file_id}) was expected but missing from processed_response. Defaulting to 'Low'.")
+                        final_response[associated_confidence_key] = "Low"
+                else:
+                    logger.warning(f"Field '{expected_key}' (file_id: {file_id}) was expected based on the template but NOT found in the AI's response or parsing. Recording as null/Low.")
+                    final_response[expected_key] = None  # Or use "" if an empty string is preferred
+                    final_response[f"{expected_key}_confidence"] = "Low"
+
+            # Carry over any other fields from processed_response that were not explicitly handled
+            # This includes fields not in the template or special fields like '_error' already handled.
+            for key, value in processed_response.items():
+                if not key.startswith('_') and key not in final_response and not key.endswith("_confidence"):
+                    # This condition means it's a data field (not meta, not already in final_response, not a confidence score itself)
+                    logger.info(f"Carrying over additional field '{key}' (file_id: {file_id}) from processed_response to final_response.")
+                    final_response[key] = value
+                    associated_confidence_key = f"{key}_confidence"
+                    final_response[associated_confidence_key] = processed_response.get(associated_confidence_key, "Low")
+
+            logger.info(f"Final response after ensuring all fields (file_id {file_id}): {final_response}")
+            return final_response
         except Exception as e:
             logger.error(f'Error in structured metadata extraction call for file_id {file_id}: {str(e)}', exc_info=True)
             return {'error': str(e), '_confidence_processing_failed': True}
